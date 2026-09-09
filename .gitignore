@@ -10,5 +10,7 @@ __pycache__/
 # Generated local evidence and reports.
 data/weekly/*
 !data/weekly/.gitkeep
+data/research/*
+!data/research/.gitkeep
 reports/*
 !reports/.gitkeep

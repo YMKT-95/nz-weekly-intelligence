@@ -5,13 +5,15 @@ from datetime import datetime, timedelta
 
 from src.config import load_settings
 from src.models import WeeklyData
+from src.research import collect_research, save_research
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    logger.info("Starting weekly intelligence script (Phase 1 foundation)")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logger.info("Starting weekly intelligence script (Phase 2 research)")
 
     try:
         settings = load_settings()
@@ -36,7 +38,20 @@ def main() -> int:
     logger.info("Run time: %s (%s)", now.isoformat(timespec="seconds"), settings.timezone)
     logger.info("Weekly data directory: %s", settings.data_dir)
     logger.info("Report directory: %s", settings.reports_dir)
-    logger.info("Foundation ready. Research and report generation are not yet connected.")
+    batch = collect_research(settings, weekly_data.report_week,
+                             weekly_data.week_start, weekly_data.week_end)
+    try:
+        destination = save_research(batch, settings.research_dir)
+    except OSError as exc:
+        logger.error("Could not save research: %s", exc)
+        return 1
+    logger.info("Research %s: %d documents, %d unavailable targets",
+                batch.status, len(batch.documents), len(batch.failures))
+    logger.info("Research saved: %s", destination)
+    if not batch.documents:
+        logger.error("No usable source material collected. See the saved failure details.")
+        return 1
+    logger.info("Research collected. Fact extraction and report generation are not yet connected.")
     return 0
 
 
