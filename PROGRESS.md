@@ -6,11 +6,30 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 
 - [x] Phase 1 — Foundation: entry point, environment configuration, logging, basic evidence models, output directories, and setup instructions.
 - [x] Phase 2 — Research: implement direct-source collection for Stats NZ, RBNZ, MBIE, and SEEK, with explicit reporting of unavailable sources.
-- [ ] Phase 3 — Structured Evidence: extract facts, validate evidence, and save structured JSON.
+- [x] Phase 3 — Structured Evidence (Stats NZ): extract supported indicators, validate source evidence, and save weekly JSON with an audit trail.
 - [ ] Phase 4 — Comparison: load historical data, compare metrics, and identify significant changes.
 - [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
 - [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
 - [ ] Phase 7 — Testing and Refinement: complete tests with mocked data and end-to-end acceptance checks.
+
+## 2026-09-10 — Phase 3 Stats NZ Evidence Extraction
+
+Scope: deterministic extraction of the Stats NZ unemployment rate, quarterly percentage-point change, unemployed people count, and annual CPI change. Narrative extraction is deferred; no LLM or search API is needed for this increment.
+
+Implemented:
+
+- Research snapshots now preserve original Stats NZ indicator fields and their array positions, with a separate structured-data checksum. Older snapshots remain readable but require recollection before extraction.
+- `src/extraction.py` maps recognised names and descriptions to metrics, parses explicit numbers and units, preserves period text, and normalises period date boundaries.
+- Validation checks required fields, numerical types and bounds, data periods, dates, source identity, checksums, and agreement between each candidate and its source fields. Publication, source update, and retrieval dates remain distinct.
+- Accepted facts include a saved snapshot reference, content hashes, a JSON pointer, exact supporting fields, and an explanation of extraction confidence. Duplicate observations are collapsed; conflicting values are rejected for review.
+- Weekly output separates accepted facts, rejected candidates, unprocessed source documents, and collection failures. Each run has an archived extraction audit; a non-empty result atomically updates `data/weekly/YYYY-WXX.json`. Runs with no accepted facts preserve the existing weekly file and exit nonzero.
+- Added synthetic extraction and validation tests and updated command-level tests for the new success criteria.
+
+Live validation on 10 September 2026 collected four source documents and produced four accepted facts, zero rejected candidates, and two skipped SEEK documents. RBNZ and MBIE remained unavailable, with both collection failures preserved in the evidence output. The command exited successfully and saved `data/weekly/2026-W37.json` plus a per-run audit. The older Stats NZ data periods remain explicit; these observations are not labelled as newly released this week.
+
+Validation: 90 offline tests pass. The saved live facts can be traced to their original snapshot, structured blocks, and supporting fields. No comparison, score, or Markdown report is generated yet.
+
+Limitations: accepted facts currently cover the four supported Stats NZ observations only. Narrative sources, historical chart observations, new metrics, and unfamiliar labels require additional extraction rules or a future LLM integration. Checksums detect changes to saved content, not errors made by the original publisher. Confidence describes extraction support rather than statistical certainty.
 
 ## 2026-09-10 — Phase 2 Direct-Source Research Complete
 

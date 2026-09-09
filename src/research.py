@@ -147,7 +147,7 @@ def _plain_text(html: str) -> str:
     return "\n".join(line.strip() for line in soup.get_text("\n", strip=True).splitlines() if line.strip())
 
 
-def _stats_text(soup: BeautifulSoup) -> tuple[str, str | None]:
+def _stats_text(soup: BeautifulSoup) -> tuple[str, str | None, dict]:
     node = soup.select_one("#pageViewData[data-value]")
     if node is None:
         raise SourceUnavailable("Stats NZ embedded page data was not found")
@@ -161,11 +161,18 @@ def _stats_text(soup: BeautifulSoup) -> tuple[str, str | None]:
              _plain_text(str(payload.get("FeaturedText", "")))]
     updated = None
     has_indicator = False
+    # Preserve original array positions and exact indicator fields for evidence pointers.
+    structured = {"PageBlocks": []}
     for block in payload["PageBlocks"]:
+        structured["PageBlocks"].append(None)
         if not isinstance(block, dict):
             continue
         if block.get("ClassName") == "IndicatorBlock":
             has_indicator = True
+            keys = {"ClassName", "Name", "LastUpdatedDate", "NextUpdatedDate", "CorrectedDate"}
+            keys.update(key + suffix for suffix in ("", "2", "3", "4", "5", "6")
+                        for key in ("Description", "Value", "Period"))
+            structured["PageBlocks"][-1] = {key: value for key, value in block.items() if key in keys}
             parts.append(str(block.get("Name", "")))
             for suffix in ("", "2", "3", "4", "5", "6"):
                 for key in ("Description", "Value", "Period"):
@@ -185,7 +192,7 @@ def _stats_text(soup: BeautifulSoup) -> tuple[str, str | None]:
                     parts.append(str(series["GraphCsvData"]))
     if not has_indicator:
         raise SourceUnavailable("Stats NZ page no longer contains an indicator block")
-    return "\n".join(part for part in parts if part), updated
+    return "\n".join(part for part in parts if part), updated, structured
 
 
 def parse_document(source: Source, url: str, html: str, retrieved_at: datetime) -> SourceDocument:
@@ -194,8 +201,9 @@ def parse_document(source: Source, url: str, html: str, retrieved_at: datetime) 
     title = title_node.get_text(" ", strip=True) if title_node else ""
     root = soup.select_one("main, [role=main], article") or soup.body or soup
     updated = None
+    structured = None
     if source.parser == "stats":
-        text, updated = _stats_text(soup)
+        text, updated, structured = _stats_text(soup)
     else:
         text = _plain_text(str(root))
     challenge_titles = ("access denied", "just a moment", "website unavailable", "verify you are human")
@@ -222,6 +230,10 @@ def parse_document(source: Source, url: str, html: str, retrieved_at: datetime) 
         updated_at_raw=updated or (modified.get("content") if modified else None),
         collection_method="embedded_page_json" if source.parser == "stats" else "html",
         content_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(), links=links,
+        structured_data=structured,
+        structured_sha256=hashlib.sha256(json.dumps(
+            structured, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")).hexdigest() if structured is not None else None,
     )
 
 

@@ -2,7 +2,7 @@
 
 A personal, local Python tool for IT graduates seeking employment in New Zealand. The goal is to research relevant information each week, compare changes over time, and generate a Markdown report supported by traceable evidence.
 
-**Phase 2: Direct-source research** is implemented. The script determines the report week, retrieves public source material, and saves a local research snapshot with source URLs, retrieval timestamps, and any collection failures. It runs without API keys. Validated fact extraction, LLM integration, historical comparison, scoring, and Markdown report generation are planned for later phases.
+**Phase 3: Structured evidence for Stats NZ indicators** is implemented. The script retrieves public source material, saves a research snapshot, and deterministically extracts supported Stats NZ observations into validated weekly JSON. Accepted facts retain their original source fields and evidence locations; rejected candidates and unprocessed sources are recorded separately. It runs without API keys. Narrative extraction, LLM integration, historical comparison, scoring, and Markdown report generation remain future work.
 
 See the [MVP specification](docs/mvp-specification.md) for the project scope and [project progress](PROGRESS.md) for phase status and validation records.
 
@@ -41,17 +41,22 @@ python main.py
 
 The logs show the ISO report week, its Monday-to-Sunday date range, the actual run time with its timezone, and the output directories. During a midweek run, Sunday marks the end of the report week; it does not imply that information from future dates has been collected.
 
-A run that collects at least one usable document and saves the snapshot exits with code `0`, even when other sources fail. Partial coverage is logged and recorded in the snapshot. Invalid configuration, an output error, or no usable source documents results in exit code `1`. When all sources fail, the script still saves the failure details if the output directory is writable.
+A run that extracts at least one accepted fact and saves the evidence exits with code `0`, even when other sources fail. Partial research coverage, rejected candidates, and unprocessed sources are recorded in the output. Invalid configuration, an output error, or no accepted facts results in exit code `1`. Even if no facts are accepted, the script saves the research and extraction audit when the output directory is writable, preserving any existing weekly evidence file.
 
-The final log line after collecting usable material is:
+The final log line after saving accepted facts is:
 
 ```text
-[INFO] Research collected. Fact extraction and report generation are not yet connected.
+[INFO] Evidence extraction complete. Comparison, scoring, and reports are not yet connected.
 ```
 
 Each run saves a separate JSON file under `data/research/YYYY-WXX/`, named with its start timestamp, including microseconds and UTC offset. Repeated runs preserve earlier snapshots, including when a later run fails. Generated research files are excluded from Git.
 
-These snapshots are collected source material, not verified weekly facts or finished reports. `data/weekly/` and `reports/` remain reserved for later phases.
+Research snapshots remain collected source material. Accepted facts and the validation audit are saved separately:
+
+- `data/weekly/YYYY-WXX.json`: the most recent run with at least one accepted fact for that week.
+- `data/weekly/runs/YYYY-WXX/<timestamp>.json`: a preserved audit for each extraction run, including runs that accepted no facts.
+
+The weekly file is replaced atomically only after its new content is written successfully. A later partial run with accepted facts replaces it with that run's evidence; facts from different runs are not silently combined. Earlier results remain in the run archive. A run with no accepted facts leaves the weekly file unchanged, so always check the command's exit code and output timestamps. No Markdown report is generated yet. All generated files are excluded from Git.
 
 ## Direct Sources
 
@@ -63,7 +68,26 @@ The source list is defined in `src/research.py`:
 - [MBIE Jobs Online](https://www.mbie.govt.nz/business-and-employment/employment-and-skills/labour-market-reports-data-and-analysis/jobs-online).
 - [SEEK NZ newsroom](https://nz.seek.com/about/news), plus the first employment report linked on that page. The URL is discovered on each run rather than hard-coded to a particular month. Its position does not establish that it was published during the report week.
 
-HTTPX retrieves the pages, and BeautifulSoup extracts readable content. Stats NZ indicator pages embed their content in a `pageViewData` JSON attribute; the collector reads the indicator labels, periods, text blocks, and chart CSV text directly from that payload. It excludes unrelated CMS metadata and does not calculate or infer metric values.
+HTTPX retrieves the pages, and BeautifulSoup extracts readable content. Stats NZ indicator pages embed their content in a `pageViewData` JSON attribute; the collector reads the indicator labels, periods, text blocks, and chart CSV text directly from that payload. It also preserves exact indicator fields in `structured_data`, with original `PageBlocks` array positions and a separate checksum. Unrelated CMS metadata is excluded. Non-indicator blocks are represented by `null` in that retained structure, while their readable content remains in the source text.
+
+## Fact Extraction and Validation
+
+`src/extraction.py` currently supports four observations from the configured Stats NZ pages:
+
+- `unemployment_rate`: percent, level.
+- `unemployment_rate_change`: percentage points, quarter-on-quarter.
+- `unemployed_people`: non-negative integer count of people.
+- `cpi_annual_change`: percent, year-on-year.
+
+Indicator names and descriptions determine the metric; slot numbers alone do not. Values, signs, units, and data periods must be explicit. Quarter periods are converted to calendar quarter boundaries; a period such as `June 2026 year` represents the year ending in June, not a single quarter. The original period text is retained. Future observation periods, invalid numbers, ambiguous labels, mismatched units, and invalid dates are rejected. Unknown publication or update dates remain `null`; they are never filled with retrieval time.
+
+Validation has two parts: Pydantic checks field types and required metadata, then the validator compares the candidate with the saved source mapping, including its meaning, dates, source URL, and evidence reference. Each fact points to its research snapshot, document hashes, and a JSON pointer such as `/PageBlocks/0/Value2` within that document's `structured_data`. Its supporting fields are also retained verbatim. Hashes help detect accidental changes; they do not establish that a publisher's statistic is correct.
+
+Identical observations for the same metric, unit, comparison basis, geography, and period are deduplicated. Conflicting values are excluded from accepted facts and flagged for review. Different periods and comparison bases remain separate. Accepted direct mappings receive `high` extraction confidence with an explanation; this is not a guarantee of statistical accuracy or freshness.
+
+The weekly file separates `facts`, `rejected`, `skipped`, and `collection_failures`. SEEK narrative content and other unsupported sources remain in research snapshots and are explicitly skipped by the extractor. Historical chart series are retained as source material but not extracted into current facts in this phase.
+
+Older Phase 2 snapshots remain readable, but do not contain the original structured fields needed for this extractor. Run `python main.py` to collect a fresh snapshot; the script does not reconstruct missing fields from flattened text.
 
 The collector uses sequential requests and an identifying user agent. It checks `robots.txt` once per origin per run, using Protego to handle wildcard rules, and observes crawl delays and request rates with a minimum one-second interval. Unavailable or HTML-challenged robots responses cause that origin to be skipped; HTTP 404/410 is treated as no published robots file. Policies requiring an interval above 60 seconds or restricted visit times are skipped for manual review.
 
@@ -80,7 +104,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
+Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, numerical validation, conflicting evidence, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
 
 ## Project Structure
 
@@ -90,11 +114,12 @@ nz-weekly-intelligence/
 ├── src/
 │   ├── __init__.py
 │   ├── config.py        # Environment variables, timezone, and project paths
+│   ├── extraction.py    # Deterministic extraction, validation, and evidence saving
 │   ├── models.py        # Pydantic research, evidence, and weekly data models
 │   └── research.py      # Direct-source collection, parsing, and snapshot saving
 ├── data/
 │   ├── research/        # Local source snapshots grouped by report week
-│   └── weekly/          # Future validated weekly evidence
+│   └── weekly/          # Accepted weekly facts and per-run extraction audits
 ├── reports/             # Future Markdown reports
 ├── tests/               # Offline collection and CLI tests
 ├── docs/
@@ -109,14 +134,14 @@ nz-weekly-intelligence/
 
 ## Data Models
 
-`SourceDocument` records the requested and final source URLs, title, collected text, retrieval time, collection method, content hash, and links. Explicit publication and update metadata are retained as raw strings when available, otherwise `None`. Retrieval time is never used as a replacement publication date. Data periods remain in the source text for Phase 3 extraction.
+`SourceDocument` records the requested and final source URLs, title, collected text, retrieval time, collection method, content hash, and links. Stats NZ documents also retain structured indicator fields and their hash. Explicit publication and update metadata are retained as raw strings when available, otherwise `None`. Retrieval time is never used as a replacement publication date.
 
 `ResearchBatch` groups documents and failures with the report week and run timestamps. Its status is `complete`, `partial`, or `unavailable`. Here, `complete` means that all configured collection targets succeeded; it does not mean that the MVP report is complete or that all information is current. Collected text is untrusted input and must be treated as evidence, never as instructions, when LLM extraction is added.
 
-`WeeklyFact` stores a category, metric, numerical value or textual fact, unit, data period, source name, HTTP(S) source URL, publication date, timezone-aware retrieval time, and confidence level. The source, data period, and value must be present and non-empty. An unknown publication date is represented by `None` and must not be replaced with the retrieval date. Structural validation does not verify factual accuracy; source support will be checked during evidence extraction.
+`WeeklyFact` now represents an accepted numerical observation with an explicit unit, comparison basis, original period text and date boundaries, geography, source, dates, and `EvidenceReference`. Its evidence reference includes the snapshot path and hash, document hashes, a JSON pointer, and exact supporting fields. Schema validation alone does not verify source support; acceptance requires the source-matching validator too.
 
-`WeeklyData` stores the report week, its start and end dates, a timezone-aware run timestamp, and a list of facts. It supports Pydantic JSON serialisation. The entry point currently uses an empty instance for report metadata; research collection does not populate validated facts yet.
+`WeeklyData` stores the report week, collection timestamp, research snapshot reference and coverage status, accepted facts, rejected candidates, skipped documents, and collection failures. It supports Pydantic JSON serialisation. Research snapshots use schema version 2 while continuing to accept version 1 inputs; the new weekly evidence format uses schema version 2.
 
 ## Next Steps
 
-Phase 3 will turn collected material into structured, validated evidence and select an LLM service if needed. Search API integration is deferred by choice; direct sources need no search credentials. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.
+The first Phase 3 extractor covers structured Stats NZ indicators. Extraction from narrative sources will require additional rules or an LLM service. Search API integration is deferred by choice. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.

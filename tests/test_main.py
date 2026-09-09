@@ -8,7 +8,12 @@ import pytest
 import main
 from src.config import Settings, load_settings
 from src.models import ResearchBatch, SourceFailure
-from src.research import Source, parse_document
+from src.extraction import extract_evidence
+
+
+@pytest.fixture(autouse=True)
+def use_temporary_project_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "extract_evidence", lambda path: extract_evidence(path, project_root=tmp_path))
 
 
 def test_all_sources_unavailable_saves_diagnostics_and_exits_nonzero(tmp_path, monkeypatch):
@@ -29,7 +34,8 @@ def test_all_sources_unavailable_saves_diagnostics_and_exits_nonzero(tmp_path, m
     assert len(saved) == 1
     assert ResearchBatch.model_validate_json(saved[0].read_text()).status == "unavailable"
     assert not list(settings.reports_dir.iterdir())
-    assert not list(settings.data_dir.iterdir())
+    assert not list(settings.data_dir.glob("*.json"))
+    assert len(list(settings.data_dir.glob("runs/*/*.json"))) == 1
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "121", "nan", "inf", "invalid"])
@@ -41,16 +47,14 @@ def test_invalid_timeout_is_rejected(monkeypatch, value):
 
 
 @pytest.mark.parametrize("partial", [False, True])
-def test_usable_research_is_saved_and_exits_successfully(tmp_path, monkeypatch, partial):
+def test_supported_evidence_is_saved_and_exits_successfully(tmp_path, monkeypatch, partial, make_stats_document):
     settings = Settings(data_dir=tmp_path / "weekly", reports_dir=tmp_path / "reports",
                         research_dir=tmp_path / "research", timezone=ZoneInfo("Pacific/Auckland"))
     monkeypatch.setattr(main, "load_settings", lambda: settings)
 
     def collect(settings, report_week, week_start, week_end):
-        now = datetime.now(settings.timezone)
-        source = Source("fixture", "Fixture", "NZ Economy", "https://example.com/report", "fixture")
-        content = '<title>Fixture report</title><main>' + 'Fixture source material. ' * 10 + '</main>'
-        document = parse_document(source, source.url, content, now)
+        document = make_stats_document()
+        now = document.retrieved_at
         failures = [SourceFailure(source_id="failed", source="Failed fixture", source_url="https://example.com/down",
                                   attempted_at=now, reason="Synthetic failure")] if partial else []
         return ResearchBatch(report_week=report_week, week_start=week_start, week_end=week_end,
@@ -63,3 +67,4 @@ def test_usable_research_is_saved_and_exits_successfully(tmp_path, monkeypatch, 
     batch = ResearchBatch.model_validate_json(saved[0].read_text())
     assert batch.status == ("partial" if partial else "complete")
     assert not list(settings.reports_dir.iterdir())
+    assert len(list(settings.data_dir.glob("*.json"))) == 1
