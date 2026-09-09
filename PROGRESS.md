@@ -1,36 +1,40 @@
-# 项目进度
+# Project Progress
 
-以 [MVP specification](docs/mvp-specification.md) 为范围依据，逐步实现本地 Python 周报工具。
+Incrementally build a local Python weekly intelligence tool, using the [MVP specification](docs/mvp-specification.md) to define the scope.
 
-## 阶段状态
+## Phase Status
 
-- [x] Phase 1 — Foundation：入口程序、环境配置、日志、基础证据模型、输出目录和运行说明。
-- [ ] Phase 2 — Research：选定服务，接入 Stats NZ、RBNZ 和一个劳动市场来源。
-- [ ] Phase 3 — Structured Evidence：提取事实、验证证据并保存结构化 JSON。
-- [ ] Phase 4 — Comparison：读取历史数据、比较指标并识别重要变化。
-- [ ] Phase 5 — Job Search Index：定义分项规则，以 Python 确定性计算指数。
-- [ ] Phase 6 — Report Generation：基于证据生成 Markdown 周报。
-- [ ] Phase 7 — Testing and Refinement：完成模拟数据测试及端到端验收。
+- [x] Phase 1 — Foundation: entry point, environment configuration, logging, basic evidence models, output directories, and setup instructions.
+- [ ] Phase 2 — Research: select services and integrate Stats NZ, RBNZ, and one labour market source.
+- [ ] Phase 3 — Structured Evidence: extract facts, validate evidence, and save structured JSON.
+- [ ] Phase 4 — Comparison: load historical data, compare metrics, and identify significant changes.
+- [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
+- [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
+- [ ] Phase 7 — Testing and Refinement: complete tests with mocked data and end-to-end acceptance checks.
 
-## 2026-09-08 — Phase 1 完成
+## 2026-09-10 — English Documentation
 
-已实现：
+Translated the README and progress log into English, including setup instructions, configuration notes, data model descriptions, and phase status. Updated the README's project tree to include the specification and progress log. Application behaviour is unchanged.
 
-- `python main.py` 初始化本地目录并打印报告周和运行时间。
-- 默认使用 `Pacific/Auckland` 时区及周一至周日的 ISO 报告周。
-- 支持 `.env` 和系统环境变量；API 配置当前允许为空。
-- 使用 Pydantic 保存事实来源、数据时期、采集时间和每周数据结构。
-- 使用独立虚拟环境，提供安装和运行说明。
+## 2026-09-08 — Phase 1 Complete
 
-验证记录：在本机 Python 3.14 环境完成启动、依赖一致性检查、模型校验、JSON 往返序列化、ISO 跨年周编号、不同工作目录启动、无效时区报错和日志不输出 API key 的烟雾检查。检查通过；本阶段尚未建立持久化自动测试套件。
+Implemented:
 
-当前边界：尚未连接外部研究或 LLM 服务，不生成真实周报，也不计算求职指数。
+- `python main.py` initialises local directories and logs the report week and run time.
+- Report periods use the `Pacific/Auckland` timezone and Monday-to-Sunday ISO weeks by default.
+- Configuration supports `.env` and existing environment variables; API settings may remain empty for now.
+- Pydantic models capture evidence sources, data periods, retrieval timestamps, and weekly data.
+- An isolated virtual environment and installation and execution instructions are provided.
 
-## 下一步需确定
+Validation record: smoke checks passed locally on Python 3.14 for startup, dependency consistency, model validation, JSON round-trip serialisation, ISO week numbering across a year boundary, execution from another working directory, invalid timezone handling, and keeping API keys out of logs. These checks have not yet been added as a persistent automated test suite.
 
-- 搜索服务和 LLM 服务的选择。
-- 分项评分的证据映射规则，以及数据缺失时的处理方式。
+Current limitations: external research and LLM services are not connected. The script does not yet generate actual reports or calculate the Job Search Index.
 
-## 进度记录约定
+## Decisions for Upcoming Phases
 
-每个可验证的小步骤形成独立提交，提交信息说明具体变化。完成一个阶段后更新本文件，记录实现内容、验证结果及已知限制。
+- Select search and LLM services.
+- Define how evidence maps to component scores and how missing data should be handled.
+
+## Progress Tracking
+
+Record each verifiable increment in a separate commit with a message describing the specific change. At the end of each phase, update this file with the implementation, validation results, and known limitations.

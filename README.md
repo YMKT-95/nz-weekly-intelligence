@@ -1,14 +1,14 @@
 # NZ IT Graduate Weekly Intelligence
 
-面向新西兰 IT 毕业生求职的个人本地 Python 工具。最终目标是每周研究相关信息、比较历史变化，并生成有来源支持的 Markdown 周报。
+A personal, local Python tool for IT graduates seeking employment in New Zealand. The goal is to research relevant information each week, compare changes over time, and generate a Markdown report supported by traceable evidence.
 
-当前只实现 **Phase 1：项目基础**。启动时会读取配置、计算报告周、创建输出目录并打印日志。尚未接入网络研究、LLM、历史比较、评分或报告生成；不会生成示例统计或空白周报，也不会发出 API 请求。
+Only **Phase 1: Foundation** is implemented. The script loads configuration, determines the report week, creates output directories, and logs its status. Web research, LLM integration, historical comparison, scoring, and report generation are planned for later phases. The current script makes no API requests and produces no sample statistics or placeholder reports.
 
-项目范围见 [MVP specification](docs/mvp-specification.md)，阶段状态与验证记录见 [项目进度](PROGRESS.md)。
+See the [MVP specification](docs/mvp-specification.md) for the project scope and [project progress](PROGRESS.md) for phase status and validation records.
 
-## 环境与安装
+## Requirements and Setup
 
-需要 Python 3.12 或更新版本。以下命令适用于 macOS / Linux，在项目目录执行：
+Python 3.12 or later is required. Run the following commands from the project directory on macOS or Linux:
 
 ```bash
 python3 -m venv .venv
@@ -16,62 +16,65 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-虚拟环境激活后，使用其中的 `python` 和依赖，不修改全局 Python 环境。`tzdata` 为缺少系统时区数据库的环境提供时区数据。
+Activating the virtual environment uses its Python interpreter and dependencies without modifying the global Python environment. `tzdata` provides timezone data on systems without a timezone database.
 
-## 配置
+## Configuration
 
-Phase 1 不需要 `.env` 或 API key，即可直接运行。如需本地配置，可在首次设置时复制模板：
+Phase 1 runs without a `.env` file or API keys. To customise local settings, copy the template during initial setup:
 
 ```bash
 cp .env.example .env
 ```
 
-- `REPORT_TIMEZONE`：默认 `Pacific/Auckland`。
-- `LLM_API_KEY`、`LLM_MODEL`、`SEARCH_API_KEY`：留待后续接入服务，当前允许为空。
+- `REPORT_TIMEZONE`: defaults to `Pacific/Auckland`.
+- `LLM_API_KEY`, `LLM_MODEL`, and `SEARCH_API_KEY`: reserved for future service integrations and may remain empty for now.
 
-已有的系统环境变量优先于 `.env`。配置文件始终从项目根目录读取，与启动命令所在目录无关。不要提交真实凭据；`.env` 已加入 `.gitignore`，日志不会输出 API key。
+Existing environment variables take precedence over `.env`. The configuration file is always loaded from the project root, regardless of the working directory. Do not commit real credentials; `.env` is excluded by `.gitignore`, and API keys are not written to logs.
 
-## 运行
+## Running the Script
 
 ```bash
 source .venv/bin/activate
 python main.py
 ```
 
-日志会显示 ISO 报告周编号、周一至周日的日期范围、带时区的实际运行时间和输出目录。周中运行时，显示的周日是报告周边界，不表示已收集未来日期的信息。
+The logs show the ISO report week, its Monday-to-Sunday date range, the actual run time with its timezone, and the output directories. During a midweek run, Sunday marks the end of the report week; it does not imply that information from future dates has been collected.
 
-成功时退出码为 `0`；配置无效或目录创建失败时，记录错误并以 `1` 退出。Phase 1 成功日志的最后一行是：
+A successful run exits with code `0`. Invalid configuration or a failure to create directories is logged as an error and exits with code `1`. The final log line for a successful Phase 1 run is:
 
 ```text
 [INFO] Foundation ready. Research and report generation are not yet connected.
 ```
 
-重复运行不会覆盖已有数据或报告。后续阶段将使用 `data/weekly/YYYY-WXX.json` 和 `reports/YYYY-WXX.md` 保存真实结果；当前仅确保目录存在。
+Repeated runs do not overwrite existing data or reports. Later phases will save actual results to `data/weekly/YYYY-WXX.json` and `reports/YYYY-WXX.md`. The current script only ensures that the directories exist.
 
-## 项目结构
+## Project Structure
 
 ```text
 nz-weekly-intelligence/
-├── main.py              # 启动、报告周计算、日志与目录初始化
+├── main.py              # Startup, report week calculation, logging, and directory setup
 ├── src/
 │   ├── __init__.py
-│   ├── config.py        # 环境变量、时区和项目路径
-│   └── models.py        # Pydantic 证据与每周数据模型
-├── data/weekly/         # 后续保存结构化周数据
-├── reports/             # 后续保存 Markdown 周报
-├── tests/               # 预留后续自动化测试目录
+│   ├── config.py        # Environment variables, timezone, and project paths
+│   └── models.py        # Pydantic evidence and weekly data models
+├── data/weekly/         # Future structured weekly data
+├── reports/             # Future Markdown reports
+├── tests/               # Reserved for automated tests
+├── docs/
+│   └── mvp-specification.md
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
+├── PROGRESS.md
 └── README.md
 ```
 
-## 数据模型
+## Data Models
 
-`WeeklyFact` 保存分类、指标、数值或文字事实、单位、数据时期、来源名称、HTTP(S) 来源 URL、发布日期、带时区的采集时间与置信度。来源、数据时期和值不能为空；未知发布日期使用 `None`，不得用采集日期代替。结构校验不代表已核实事实，来源支持程度将在证据提取阶段检查。
+`WeeklyFact` stores a category, metric, numerical value or textual fact, unit, data period, source name, HTTP(S) source URL, publication date, timezone-aware retrieval time, and confidence level. The source, data period, and value must be present and non-empty. An unknown publication date is represented by `None` and must not be replaced with the retrieval date. Structural validation does not verify factual accuracy; source support will be checked during evidence extraction.
 
-`WeeklyData` 保存报告周、周起止日期、带时区的运行时间和事实列表，支持 Pydantic JSON 序列化。Phase 1 只在内存中创建空的周数据容器。
+`WeeklyData` stores the report week, its start and end dates, a timezone-aware run timestamp, and a list of facts. It supports Pydantic JSON serialisation. Phase 1 creates an empty weekly data container in memory only.
 
-## 后续阶段
+## Next Steps
 
-下一步是 Phase 2：选定搜索与 LLM 服务，从 Stats NZ、RBNZ 和一个劳动市场来源开始研究。此后依次实现证据提取与验证、历史比较、确定性评分、报告生成及完整测试。研究、评分和报告模块将在实际实现时添加。
+Phase 2 will select search and LLM services and begin research with Stats NZ, RBNZ, and one labour market source. Later phases will add evidence extraction and validation, historical comparison, deterministic scoring, report generation, and comprehensive testing. Research, scoring, and report modules will be added as those features are implemented.
