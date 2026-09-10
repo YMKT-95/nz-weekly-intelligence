@@ -2,7 +2,7 @@
 
 A personal, local Python tool for IT graduates seeking employment in New Zealand. The goal is to research relevant information each week, compare changes over time, and generate a Markdown report supported by traceable evidence.
 
-**Phase 3: Structured evidence for Stats NZ indicators** is implemented. The script retrieves public source material, saves a research snapshot, and deterministically extracts supported Stats NZ observations into validated weekly JSON. Accepted facts retain their original source fields and evidence locations; rejected candidates and unprocessed sources are recorded separately. It runs without API keys. Narrative extraction, LLM integration, historical comparison, scoring, and Markdown report generation remain future work.
+**Phase 3 is in progress:** structured Stats NZ indicators and supported national statements from SEEK employment reports can now be extracted into validated weekly JSON. Accepted facts retain their original fields or exact article passages, including period and scope context. Rejected candidates and unprocessed sources are recorded separately. It runs without API keys. Broader article extraction, MBIE/RBNZ evidence support, LLM integration, historical comparison, scoring, and Markdown report generation remain outstanding.
 
 See the [MVP specification](docs/mvp-specification.md) for the project scope and [project progress](PROGRESS.md) for phase status and validation records.
 
@@ -72,7 +72,7 @@ HTTPX retrieves the pages, and BeautifulSoup extracts readable content. Stats NZ
 
 ## Fact Extraction and Validation
 
-`src/extraction.py` currently supports four observations from the configured Stats NZ pages:
+`src/extraction.py` coordinates extraction and supports four observations from the configured Stats NZ pages:
 
 - `unemployment_rate`: percent, level.
 - `unemployment_rate_change`: percentage points, quarter-on-quarter.
@@ -83,11 +83,19 @@ Indicator names and descriptions determine the metric; slot numbers alone do not
 
 Validation has two parts: Pydantic checks field types and required metadata, then the validator compares the candidate with the saved source mapping, including its meaning, dates, source URL, and evidence reference. Each fact points to its research snapshot, document hashes, and a JSON pointer such as `/PageBlocks/0/Value2` within that document's `structured_data`. Its supporting fields are also retained verbatim. Hashes help detect accidental changes; they do not establish that a publisher's statistic is correct.
 
-Identical observations for the same metric, unit, comparison basis, geography, and period are deduplicated. Conflicting values are excluded from accepted facts and flagged for review. Different periods and comparison bases remain separate. Accepted direct mappings receive `high` extraction confidence with an explanation; this is not a guarantee of statistical accuracy or freshness.
+`src/seek_extraction.py` adds two national SEEK series: `seek_job_ads_change` and `seek_applications_per_ad_change`. Recognised observed-change sentences in the National Insights sections supply percentage changes. Explicit month-on-month and year-on-year statements remain separate; an implicit monthly change requires the recognised national monthly chart-caption context. Regional, industry, AI-specific, and graduate-specific figures are not mapped to these national aggregates.
 
-The weekly file separates `facts`, `rejected`, `skipped`, and `collection_failures`. SEEK narrative content and other unsupported sources remain in research snapshots and are explicitly skipped by the extractor. Historical chart series are retained as source material but not extracted into current facts in this phase.
+SEEK text evidence uses `kind: "text"` and a list of `spans`. Each span records an exact quotation, its role (statement, section, report heading/period, lag, or methodology), and zero-based Unicode character offsets into the saved document's `text`; `end` is exclusive. The candidate validator recreates the supported source mapping and checks all metadata and spans. These references point to saved plain text, not to HTML byte offsets or a later version of the website. Stats NZ JSON references remain supported unchanged.
 
-Older Phase 2 snapshots remain readable, but do not contain the original structured fields needed for this extractor. Run `python main.py` to collect a fresh snapshot; the script does not reconstruct missing fields from flattened text.
+The SEEK report month comes from its explicit heading. The year must appear in that heading or a consistent, recognised national chart caption; it is never inferred from the URL or retrieval time. Captions provide period context only, not numbers from unseen chart images. Applications require the explicit one-month lag note, including the previous-year transition for January reports. A disagreement between the summary, detailed statement, and expected data period withholds that metric for review. Unknown wording, unsupported comparisons, and ambiguous periods also produce audit issues.
+
+`scope: "all"` denotes the supported national aggregate, not IT graduate vacancies. The `adjustment` field records `trend` for SEEK job ads only when the recognised methodology text supports it for that period; otherwise it stays `not_stated`. The applications series is not automatically assigned the job-ad adjustment. Missing publication metadata stays `null`; the newsroom link's date is not currently promoted to an article publication date.
+
+Identical observations for the same publisher, metric, unit, comparison basis, geography, scope, adjustment, and period are deduplicated. Conflicting values are excluded from accepted facts and flagged for review. Different periods and comparison bases remain separate. Accepted direct mappings receive `high` extraction confidence with an explanation; this is not a guarantee of statistical accuracy or freshness.
+
+The weekly file separates `facts`, `rejected`, `skipped`, and `collection_failures`. The SEEK newsroom is a discovery document and remains skipped; its linked employment article is processed by the SEEK rules. Other unsupported sources remain explicitly skipped. A processed article can have accepted facts and rejected metric candidates at the same time. Historical chart series are retained as source material but not extracted into current facts in this phase.
+
+Older Phase 2 snapshots remain readable, but do not contain the original structured fields needed for Stats NZ extraction. SEEK article extraction can use existing snapshots when they contain the required text and context. Run `python main.py` to collect a fresh snapshot; the script does not reconstruct missing fields from flattened text.
 
 The collector uses sequential requests and an identifying user agent. It checks `robots.txt` once per origin per run, using Protego to handle wildcard rules, and observes crawl delays and request rates with a minimum one-second interval. Unavailable or HTML-challenged robots responses cause that origin to be skipped; HTTP 404/410 is treated as no published robots file. Policies requiring an interval above 60 seconds or restricted visit times are skipped for manual review.
 
@@ -104,7 +112,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, numerical validation, conflicting evidence, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
+Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, numerical validation, exact text spans, reporting lags, national scope, monthly/annual distinctions, conflicting evidence, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
 
 ## Project Structure
 
@@ -116,7 +124,8 @@ nz-weekly-intelligence/
 │   ├── config.py        # Environment variables, timezone, and project paths
 │   ├── extraction.py    # Deterministic extraction, validation, and evidence saving
 │   ├── models.py        # Pydantic research, evidence, and weekly data models
-│   └── research.py      # Direct-source collection, parsing, and snapshot saving
+│   ├── research.py      # Direct-source collection, parsing, and snapshot saving
+│   └── seek_extraction.py # National SEEK statements, periods, and text evidence
 ├── data/
 │   ├── research/        # Local source snapshots grouped by report week
 │   └── weekly/          # Accepted weekly facts and per-run extraction audits
@@ -138,10 +147,10 @@ nz-weekly-intelligence/
 
 `ResearchBatch` groups documents and failures with the report week and run timestamps. Its status is `complete`, `partial`, or `unavailable`. Here, `complete` means that all configured collection targets succeeded; it does not mean that the MVP report is complete or that all information is current. Collected text is untrusted input and must be treated as evidence, never as instructions, when LLM extraction is added.
 
-`WeeklyFact` now represents an accepted numerical observation with an explicit unit, comparison basis, original period text and date boundaries, geography, source, dates, and `EvidenceReference`. Its evidence reference includes the snapshot path and hash, document hashes, a JSON pointer, and exact supporting fields. Schema validation alone does not verify source support; acceptance requires the source-matching validator too.
+`WeeklyFact` now represents an accepted numerical observation with an explicit unit, comparison basis, original period text and date boundaries, geography, source, dates, and `EvidenceReference`. Its evidence reference includes the snapshot path and hash plus either Stats NZ structured fields and a JSON pointer, or SEEK text spans and their document hash. Schema validation alone does not verify source support; acceptance requires the source-matching validator too.
 
-`WeeklyData` stores the report week, collection timestamp, research snapshot reference and coverage status, accepted facts, rejected candidates, skipped documents, and collection failures. It supports Pydantic JSON serialisation. Research snapshots use schema version 2 while continuing to accept version 1 inputs; the new weekly evidence format uses schema version 2.
+`WeeklyData` stores the report week, collection timestamp, research snapshot reference and coverage status, accepted facts, rejected candidates, skipped documents, and collection failures. It supports Pydantic JSON serialisation. Research snapshots use schema version 2 while continuing to accept version 1 inputs; new weekly outputs use schema version 3 and the reader still accepts version 2. Version 3 adds text evidence, monthly comparisons, scope, and adjustment metadata. Older code that only supports version 2 cannot read these new outputs.
 
 ## Next Steps
 
-The first Phase 3 extractor covers structured Stats NZ indicators. Extraction from narrative sources will require additional rules or an LLM service. Search API integration is deferred by choice. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.
+Phase 3 now covers structured Stats NZ indicators and a bounded set of national SEEK article statements. Broader article layouts, CSV/spreadsheet evidence, and qualitative claims require additional rules or a future LLM service. Investigating permitted MBIE/RBNZ source access and documenting implemented or deferred coverage remain the next Phase 3 work. Search API integration is deferred by choice. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.

@@ -25,6 +25,36 @@ class EvidenceReference(BaseModel):
     raw_fields: dict[str, JsonValue]
 
 
+class TextSpan(BaseModel):
+    """Exact Unicode character offsets into a SourceDocument's saved text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["statement", "section", "report_heading", "report_period", "lag", "methodology"]
+    start: StrictInt = Field(ge=0)
+    end: StrictInt = Field(gt=0)
+    quote: NonEmptyText
+
+    @model_validator(mode="after")
+    def check_length(self):
+        if self.end - self.start != len(self.quote):
+            raise ValueError("Text span length must match its exact quotation")
+        return self
+
+
+class TextEvidenceReference(BaseModel):
+    """Supporting passages in saved article text, including necessary context."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["text"] = "text"
+    snapshot_file: NonEmptyText
+    snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_id: NonEmptyText
+    document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    spans: list[TextSpan] = Field(min_length=1)
+
+
 class WeeklyFact(BaseModel):
     """A supported numerical observation; source matching is checked separately."""
 
@@ -36,11 +66,13 @@ class WeeklyFact(BaseModel):
     metric: NonEmptyText
     value: StrictInt | StrictFloat
     unit: Literal["percent", "percentage_points", "people"]
-    comparison_basis: Literal["level", "quarter_on_quarter", "year_on_year"]
+    comparison_basis: Literal["level", "month_on_month", "quarter_on_quarter", "year_on_year"]
     period: NonEmptyText
     period_start: date
     period_end: date
     geography: Literal["New Zealand"] = "New Zealand"
+    scope: Literal["all"] = "all"
+    adjustment: Literal["not_stated", "trend", "seasonally_adjusted", "unadjusted"] = "not_stated"
     source: NonEmptyText
     source_url: HttpUrl
     publication_date: date | None = None
@@ -48,11 +80,13 @@ class WeeklyFact(BaseModel):
     retrieved_at: AwareDatetime
     confidence: Literal["high"] = "high"
     confidence_reason: NonEmptyText
-    extraction_method: Literal["stats_indicator_v1"] = "stats_indicator_v1"
-    evidence: EvidenceReference
+    extraction_method: Literal["stats_indicator_v1", "seek_article_v1"] = "stats_indicator_v1"
+    evidence: EvidenceReference | TextEvidenceReference
 
     @model_validator(mode="after")
     def check_dates(self):
+        if (self.extraction_method == "seek_article_v1") != isinstance(self.evidence, TextEvidenceReference):
+            raise ValueError("Evidence reference type must match the extraction method")
         if self.period_start > self.period_end:
             raise ValueError("Data period start must not follow its end")
         for value in (self.period_end, self.publication_date, self.source_updated_date):
@@ -121,6 +155,7 @@ class ExtractionIssue(BaseModel):
     reason: NonEmptyText
     json_pointer: str | None = None
     raw_fields: dict[str, JsonValue] = Field(default_factory=dict)
+    text_spans: list[TextSpan] = Field(default_factory=list)
 
 
 class WeeklyData(BaseModel):
@@ -128,7 +163,7 @@ class WeeklyData(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[2, 3] = 3
     stage: Literal["evidence"] = "evidence"
     report_week: str = Field(pattern=r"^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$")
     week_start: date

@@ -1,4 +1,4 @@
-"""Deterministic Stats NZ extraction with source matching and an audit trail."""
+"""Deterministic source extraction with validation and an audit trail."""
 
 import calendar
 import hashlib
@@ -17,6 +17,7 @@ from src.config import PROJECT_ROOT
 from src.models import (
     ExtractionIssue, ResearchBatch, SourceDocument, WeeklyData, WeeklyFact,
 )
+from src.seek_extraction import extract_seek, validate_seek_fact
 
 
 @dataclass(frozen=True)
@@ -175,9 +176,11 @@ def _candidate(document: SourceDocument, block: dict, index: int, suffix: str,
 def validate_fact(candidate: dict, document: SourceDocument,
                   snapshot_file: str, snapshot_hash: str) -> WeeklyFact:
     """Check schema and compare every candidate field with its source mapping."""
+    if document.source_id == "seek_employment_report":
+        return validate_seek_fact(candidate, document, snapshot_file, snapshot_hash)
     fact = WeeklyFact.model_validate(candidate)
     blocks = _check_document(document)
-    match = re.fullmatch(r"/PageBlocks/(\d+)/Value([2-6]?)", fact.evidence.json_pointer)
+    match = re.fullmatch(r"/PageBlocks/(\d+)/Value([2-6]?)", getattr(fact.evidence, "json_pointer", ""))
     if match is None:
         raise ValueError("Unsupported evidence pointer")
     index, suffix = int(match[1]), match[2]
@@ -192,7 +195,7 @@ def validate_fact(candidate: dict, document: SourceDocument,
 
 
 def extract_evidence(snapshot_path: Path, *, project_root: Path = PROJECT_ROOT) -> WeeklyData:
-    """Read persisted evidence; never infer structured facts from old flattened text."""
+    """Read persisted evidence and dispatch to the supported source's rules."""
     raw = snapshot_path.read_bytes()
     batch = ResearchBatch.model_validate_json(raw)
     reference = snapshot_path.resolve().relative_to(project_root.resolve()).as_posix()
@@ -204,6 +207,16 @@ def extract_evidence(snapshot_path: Path, *, project_root: Path = PROJECT_ROOT) 
     )
     candidates = []
     for document in batch.documents:
+        if document.source_id == "seek_employment_report":
+            try:
+                if document.retrieved_at > batch.completed_at:
+                    raise ValueError("Document retrieval timestamp is after snapshot completion")
+                facts, issues = extract_seek(document, reference, snapshot_hash)
+                candidates.extend(facts)
+                weekly.rejected.extend(issues)
+            except ValueError as exc:
+                weekly.rejected.append(ExtractionIssue(source_id=document.source_id, reason=str(exc)))
+            continue
         if document.source_id not in RULES:
             weekly.skipped.append(ExtractionIssue(
                 source_id=document.source_id, reason="No deterministic extractor for this source yet"))
@@ -242,15 +255,17 @@ def extract_evidence(snapshot_path: Path, *, project_root: Path = PROJECT_ROOT) 
     # Keep distinct periods/bases separate. Reject conflicting observations rather than averaging.
     grouped = {}
     for fact in candidates:
-        key = (fact.metric, fact.unit, fact.comparison_basis, fact.period_start, fact.period_end, fact.geography)
+        key = (fact.source, fact.metric, fact.unit, fact.comparison_basis,
+               fact.period_start, fact.period_end, fact.geography, fact.scope, fact.adjustment)
         grouped.setdefault(key, []).append(fact)
     for group in grouped.values():
         if len({fact.value for fact in group}) > 1:
             for fact in group:
                 weekly.rejected.append(ExtractionIssue(
-                    source_id=fact.evidence.source_id, json_pointer=fact.evidence.json_pointer,
+                    source_id=fact.evidence.source_id, json_pointer=getattr(fact.evidence, "json_pointer", None),
                     reason="Conflicting values for the same metric and data period; manual review required",
-                    raw_fields=fact.evidence.raw_fields))
+                    raw_fields=getattr(fact.evidence, "raw_fields", {}),
+                    text_spans=getattr(fact.evidence, "spans", [])))
         else:
             weekly.facts.append(group[0])
     return weekly

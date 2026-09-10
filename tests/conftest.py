@@ -51,3 +51,39 @@ def make_stats_document():
         return research.parse_document(source, source.url, content,
                                        datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("Pacific/Auckland")))
     return make
+
+
+@pytest.fixture
+def make_seek_document():
+    """Synthetic values in the supported article layout, parsed through collection."""
+    def make(text=None, published=None):
+        source = research.Source(
+            "seek_employment_report", "SEEK NZ", "NZ Labour Market",
+            "https://nz.seek.com/about/news/article/seek-nz-employment-report-july26", "job ad")
+        if text is None:
+            text = "\n".join([
+                "SEEK NZ Employment Report - July",
+                "Applications per job ad are recorded with a one-month lag. Data shown in this report refers to June data.",
+                "AI Insights:",
+                "Job ads referencing AI rose 7.7% in July.",
+                "National Insights:",
+                "Job ads fell for a third consecutive month, down 2.3% in July.",
+                "Applications per job ad rose for a second month, up 1.4%, as opportunities fell.",
+                "Region Insights:",
+                "Job ads rose 8.8% in July.",
+                "National Insights",
+                "Job ads fell 2.3% in July, marking three months of decline.",
+                "Figure 3: National SEEK job ad percentage change m/m (July 2025 to July 2026)",
+                "Applications per job ad have picked up over the past two months, rising 1.4% in June, as opportunities fell.",
+                "Industry Insights",
+                "Job ads rose 9.9% in July.",
+                "About the SEEK Employment Report",
+                "Methodology includes reporting on trend estimates rather than seasonally adjusted estimates from August 2025 onwards.",
+                "Synthetic article for automated tests; these numbers are not real observations.",
+            ])
+        meta = f'<meta property="article:published_time" content="{html.escape(published)}">' if published else ""
+        content = ('<title>SEEK synthetic employment report</title>' + meta + '<article>'
+                   + ''.join('<p>' + html.escape(line) + '</p>' for line in text.splitlines()) + '</article>')
+        return research.parse_document(source, source.url, content,
+                                       datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("Pacific/Auckland")))
+    return make

@@ -6,11 +6,28 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 
 - [x] Phase 1 — Foundation: entry point, environment configuration, logging, basic evidence models, output directories, and setup instructions.
 - [x] Phase 2 — Research: implement direct-source collection for Stats NZ, RBNZ, MBIE, and SEEK, with explicit reporting of unavailable sources.
-- [ ] Phase 3 — Structured Evidence (in progress): Stats NZ extraction and validation are implemented; SEEK extraction and evidence support for other available sources remain outstanding.
+- [ ] Phase 3 — Structured Evidence (in progress): Stats NZ and bounded national SEEK extraction are implemented; MBIE/RBNZ access investigation and evidence coverage decisions remain outstanding.
 - [ ] Phase 4 — Comparison: load historical data, compare metrics, and identify significant changes.
 - [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
 - [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
 - [ ] Phase 7 — Testing and Refinement: complete tests with mocked data and end-to-end acceptance checks.
+
+## 2026-09-11 — Phase 3 SEEK Article Evidence
+
+Implemented a second Phase 3 increment, without API keys:
+
+- Added exact text evidence spans with supporting quotations, character offsets, and roles for statements, national scope, report periods, lag notes, and methodology. Stats NZ structured-field references remain supported.
+- Added `src/seek_extraction.py` for recognised national job-ad and applications-per-ad percentage-change statements. Month-on-month and year-on-year comparisons remain separate; regional, industry, and AI-specific figures are excluded from national metrics.
+- Require an explicit report year in the heading or a consistent national chart caption. Preserve the applications reporting lag, including January/December year boundaries. Publication metadata remains separate; missing dates are not inferred from the URL or retrieval time.
+- Withhold a metric when its summary and detailed text disagree about its data period, or when its wording is unsupported. Conflicting values are rejected with supporting text for review.
+- Added national scope and adjustment metadata to series identity. Recognised SEEK job-ad methodology can establish trend estimates; applications adjustment is not inferred from that statement.
+- Weekly outputs now use schema version 3, with continued reading support for version 2. Research snapshots remain version 2; no collection-format change was needed.
+
+Validation: 131 offline tests pass with warnings treated as errors. Tests cover text and metadata tampering, source identity, lag and year boundaries, missing period context, ambiguous wording, national scope, conflicting values, backwards reading, and combined command output.
+
+Replayed the saved 10 September research snapshot, without new network requests: five facts accepted (four Stats NZ observations and SEEK applications per ad, +1.6% for June 2026), one metric rejected, one discovery document skipped, and two original collection failures retained. SEEK's summary describes its 0.8% job-ad decline as July, while the detailed national section says June. The extractor withholds that metric rather than choosing a month. Exact text spans and archive/weekly JSON round-tripping were verified in a temporary directory; existing weekly files were not replaced by this replay.
+
+Limitations: the rules support a bounded article layout and observed-change wording, not general natural-language understanding. Unrecognised statements need review. Chart images, regional/industry breakdowns, CSV/spreadsheet references, qualitative claims, and newsroom-derived article publication dates are not implemented. MBIE and RBNZ access was not retested in this increment, and neither has an evidence extractor yet. Phase 3 remains in progress.
 
 ## 2026-09-10 — Phase 3 Stats NZ Evidence Extraction
 
