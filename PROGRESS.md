@@ -6,7 +6,7 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 
 - [x] Phase 1 — Foundation: entry point, environment configuration, logging, basic evidence models, output directories, and setup instructions.
 - [x] Phase 2 — Research: implement direct-source collection for Stats NZ, RBNZ, MBIE, and SEEK, with explicit reporting of unavailable sources.
-- [x] Phase 3 — Structured Evidence (Stats NZ): extract supported indicators, validate source evidence, and save weekly JSON with an audit trail.
+- [ ] Phase 3 — Structured Evidence (in progress): Stats NZ extraction and validation are implemented; SEEK extraction and evidence support for other available sources remain outstanding.
 - [ ] Phase 4 — Comparison: load historical data, compare metrics, and identify significant changes.
 - [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
 - [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
@@ -15,6 +15,8 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 ## 2026-09-10 — Phase 3 Stats NZ Evidence Extraction
 
 Scope: deterministic extraction of the Stats NZ unemployment rate, quarterly percentage-point change, unemployed people count, and annual CPI change. Narrative extraction is deferred; no LLM or search API is needed for this increment.
+
+This is the first completed increment of Phase 3, not completion of evidence extraction across all configured sources. Next is SEEK employment-report extraction, including month-on-month/year-on-year distinctions and the reporting lag for applications per advertisement. MBIE and RBNZ evidence extraction remains dependent on obtaining accessible source material through permitted routes; neither source currently contributes accepted facts.
 
 Implemented:
 
