@@ -31,6 +31,7 @@ class Source:
     url: str
     expected_text: str
     parser: Literal["html", "stats", "seek_newsroom"] = "html"
+    deferred_reason: str | None = None
 
 
 SOURCES = (
@@ -39,7 +40,9 @@ SOURCES = (
     Source("stats_cpi", "Stats NZ", "NZ Economy",
            "https://www.stats.govt.nz/indicators/consumers-price-index-cpi/", "price index", "stats"),
     Source("rbnz_ocr", "RBNZ", "NZ Economy",
-           "https://www.rbnz.govt.nz/monetary-policy/monetary-policy-decisions", "OCR"),
+           "https://www.rbnz.govt.nz/monetary-policy/monetary-policy-decisions", "OCR",
+           deferred_reason="RBNZ automated collection requires prior written permission; "
+           "access and OCR extraction are deferred. See https://www.rbnz.govt.nz/about-our-site/terms-of-use"),
     Source("mbie_jobs_online", "MBIE", "NZ Labour Market",
            "https://www.mbie.govt.nz/business-and-employment/employment-and-skills/"
            "labour-market-reports-data-and-analysis/jobs-online", "Jobs Online"),
@@ -248,8 +251,14 @@ def collect_research(settings: Settings, report_week: str, week_start: date, wee
                       headers={"User-Agent": USER_AGENT}) as client:
         fetcher = DirectFetcher(client)
         for source in queue:
-            logger.info("Researching %s: %s", source.category, source.id)
             attempted = datetime.now(settings.timezone)
+            if source.deferred_reason:
+                failures.append(SourceFailure(source_id=source.id, source=source.name,
+                                              source_url=source.url, attempted_at=attempted,
+                                              kind="deferred", reason=source.deferred_reason))
+                logger.warning("%s deferred: %s", source.id, source.deferred_reason)
+                continue
+            logger.info("Researching %s: %s", source.category, source.id)
             try:
                 url, html = fetcher.fetch(source.url)
                 document = parse_document(source, url, html, datetime.now(settings.timezone))

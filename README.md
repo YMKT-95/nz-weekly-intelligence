@@ -2,7 +2,7 @@
 
 A personal, local Python tool for IT graduates seeking employment in New Zealand. The goal is to research relevant information each week, compare changes over time, and generate a Markdown report supported by traceable evidence.
 
-**Phase 3 is in progress:** structured Stats NZ indicators and supported national statements from SEEK employment reports can now be extracted into validated weekly JSON. Accepted facts retain their original fields or exact article passages, including period and scope context. Rejected candidates and unprocessed sources are recorded separately. It runs without API keys. Broader article extraction, MBIE/RBNZ evidence support, LLM integration, historical comparison, scoring, and Markdown report generation remain outstanding.
+**Phase 3 is in progress:** structured Stats NZ indicators and supported national statements from SEEK and MBIE can now be extracted into validated weekly JSON. Accepted facts retain their original fields or exact article passages, including period and scope context. Rejected candidates and unprocessed sources are recorded separately. It runs without API keys. MBIE live access remains unavailable on the tested network, and RBNZ collection/extraction is deferred pending written permission. Broader article extraction, LLM integration, historical comparison, scoring, and Markdown report generation remain outstanding.
 
 See the [MVP specification](docs/mvp-specification.md) for the project scope and [project progress](PROGRESS.md) for phase status and validation records.
 
@@ -64,7 +64,7 @@ The source list is defined in `src/research.py`:
 
 - [Stats NZ unemployment indicator](https://www.stats.govt.nz/indicators/unemployment-rate/).
 - [Stats NZ CPI indicator](https://www.stats.govt.nz/indicators/consumers-price-index-cpi/).
-- [RBNZ monetary policy decisions](https://www.rbnz.govt.nz/monetary-policy/monetary-policy-decisions).
+- [RBNZ monetary policy decisions](https://www.rbnz.govt.nz/monetary-policy/monetary-policy-decisions): explicitly deferred; no HTTP requests are made for this target.
 - [MBIE Jobs Online](https://www.mbie.govt.nz/business-and-employment/employment-and-skills/labour-market-reports-data-and-analysis/jobs-online).
 - [SEEK NZ newsroom](https://nz.seek.com/about/news), plus the first employment report linked on that page. The URL is discovered on each run rather than hard-coded to a particular month. Its position does not establish that it was published during the report week.
 
@@ -91,6 +91,10 @@ The SEEK report month comes from its explicit heading. The year must appear in t
 
 `scope: "all"` denotes the supported national aggregate, not IT graduate vacancies. The `adjustment` field records `trend` for SEEK job ads only when the recognised methodology text supports it for that period; otherwise it stays `not_stated`. The applications series is not automatically assigned the job-ad adjustment. Missing publication metadata stays `null`; the newsroom link's date is not currently promoted to an article publication date.
 
+`src/mbie_extraction.py` supports `mbie_job_ads_annual_change` from the national quarterly overview on the official Jobs Online HTML page. It requires a recognised overview heading, the first national result, matching explicit quarters, percentage-change wording, and supporting index/adjustment methodology. The result is an annual percentage change in an unadjusted job-advertisement index, not a vacancy count or a graduate hiring measure. Its data period is the three-month quarter; `year_on_year` describes the comparison to that quarter a year earlier. No comparison is calculated in this increment.
+
+The MBIE reference retains exact text spans, including a visible page update date when available. Page update and report publication dates remain distinct. Unsupported layouts, missing methodology, mismatched periods, conflicting totals, or invalid dates are rejected. Downloadable CSV/XLSX data is not yet parsed; the HTML rules can operate only after usable page content has been collected. The implementation is tested with synthetic HTML and mocked HTTP, but has not produced a live MBIE fact because the tested network still receives an access-challenge page.
+
 Identical observations for the same publisher, metric, unit, comparison basis, geography, scope, adjustment, and period are deduplicated. Conflicting values are excluded from accepted facts and flagged for review. Different periods and comparison bases remain separate. Accepted direct mappings receive `high` extraction confidence with an explanation; this is not a guarantee of statistical accuracy or freshness.
 
 The weekly file separates `facts`, `rejected`, `skipped`, and `collection_failures`. The SEEK newsroom is a discovery document and remains skipped; its linked employment article is processed by the SEEK rules. Other unsupported sources remain explicitly skipped. A processed article can have accepted facts and rejected metric candidates at the same time. Historical chart series are retained as source material but not extracted into current facts in this phase.
@@ -102,6 +106,16 @@ The collector uses sequential requests and an identifying user agent. It checks 
 Requests have a 2 MB decompressed response limit. The collector follows at most three same-origin redirects, checking the destination against robots rules before each request. Cross-origin redirects, HTTP errors, unsupported content types, and missing or unusable page content are recorded as failures. There is no browser automation, access-control bypass, automatic retry loop, or broad crawl. Linked PDFs and spreadsheets are recorded as links but are not downloaded in this phase.
 
 Access can vary by source and network. Check the saved failures to see which sources were actually collected. Live collection results are documented in [project progress](PROGRESS.md).
+
+## MBIE and RBNZ Access Status
+
+On 11 September 2026, the script still received a challenge shell from MBIE's Jobs Online page. The [official page](https://www.mbie.govt.nz/business-and-employment/employment-and-skills/labour-market-reports-data-and-analysis/jobs-online) advertises monthly CSV and quarterly CSV/XLSX downloads. Their actual file layouts were not retrieved or verified in this increment, so no download extractor or guessed download URL was added. Search-engine descriptions were used for source investigation only and are never inserted into the script's evidence snapshots.
+
+RBNZ's [terms of use](https://www.rbnz.govt.nz/about-our-site/terms-of-use) require prior written permission for this kind of automated collection and provide an allow-list request route. Its [official data-file index](https://www.rbnz.govt.nz/statistics/series/data-file-index-page) links the B2 daily workbook, which is a possible future OCR source. Both the configured website and the separately published download host returned HTTP 403 for their robots files during the access investigation. No workbook was downloaded and no OCR extractor is implemented.
+
+The RBNZ target now has an explicit `deferred_reason` in `src/research.py`. Collection records `kind: "deferred"` before any HTTP request for that target. Ordinary access failures have `kind: "unavailable"`; older snapshots without `kind` retain that default. Both remain in the weekly `collection_failures` audit, and logs distinguish their counts. Existing collection status remains `partial` when other sources succeed.
+
+To reopen MBIE live coverage, obtain a usable response through a permitted route and verify the extractor against the saved HTML, or inspect an official download before adding its parser. To reopen RBNZ, obtain the publisher's written permission, confirm the allowed access route, and inspect the official OCR data before implementing extraction. A permission request has not been submitted on the user's behalf. Neither unavailable source is counted as successful live evidence coverage.
 
 ## Tests
 
@@ -123,6 +137,7 @@ nz-weekly-intelligence/
 │   ├── __init__.py
 │   ├── config.py        # Environment variables, timezone, and project paths
 │   ├── extraction.py    # Deterministic extraction, validation, and evidence saving
+│   ├── mbie_extraction.py # MBIE national annual changes and text evidence
 │   ├── models.py        # Pydantic research, evidence, and weekly data models
 │   ├── research.py      # Direct-source collection, parsing, and snapshot saving
 │   └── seek_extraction.py # National SEEK statements, periods, and text evidence
@@ -147,10 +162,10 @@ nz-weekly-intelligence/
 
 `ResearchBatch` groups documents and failures with the report week and run timestamps. Its status is `complete`, `partial`, or `unavailable`. Here, `complete` means that all configured collection targets succeeded; it does not mean that the MVP report is complete or that all information is current. Collected text is untrusted input and must be treated as evidence, never as instructions, when LLM extraction is added.
 
-`WeeklyFact` now represents an accepted numerical observation with an explicit unit, comparison basis, original period text and date boundaries, geography, source, dates, and `EvidenceReference`. Its evidence reference includes the snapshot path and hash plus either Stats NZ structured fields and a JSON pointer, or SEEK text spans and their document hash. Schema validation alone does not verify source support; acceptance requires the source-matching validator too.
+`WeeklyFact` now represents an accepted numerical observation with an explicit unit, comparison basis, original period text and date boundaries, geography, source, dates, and `EvidenceReference`. Its evidence reference includes the snapshot path and hash plus either Stats NZ structured fields and a JSON pointer, or SEEK/MBIE text spans and their document hash. Schema validation alone does not verify source support; acceptance requires the source-matching validator too.
 
 `WeeklyData` stores the report week, collection timestamp, research snapshot reference and coverage status, accepted facts, rejected candidates, skipped documents, and collection failures. It supports Pydantic JSON serialisation. Research snapshots use schema version 2 while continuing to accept version 1 inputs; new weekly outputs use schema version 3 and the reader still accepts version 2. Version 3 adds text evidence, monthly comparisons, scope, and adjustment metadata. Older code that only supports version 2 cannot read these new outputs.
 
 ## Next Steps
 
-Phase 3 now covers structured Stats NZ indicators and a bounded set of national SEEK article statements. Broader article layouts, CSV/spreadsheet evidence, and qualitative claims require additional rules or a future LLM service. Investigating permitted MBIE/RBNZ source access and documenting implemented or deferred coverage remain the next Phase 3 work. Search API integration is deferred by choice. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.
+Phase 3 has live-verified Stats NZ and bounded SEEK extraction, plus MBIE HTML extraction verified with synthetic fixtures. Broader article layouts, CSV/spreadsheet evidence, and qualitative claims require additional rules or a future LLM service. MBIE live validation remains blocked by access; RBNZ is explicitly deferred pending the publisher's permission and a supported data route. Phase 3 remains in progress, with these coverage limits documented. Search API integration is deferred by choice. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.

@@ -40,8 +40,10 @@ def main() -> int:
     except OSError as exc:
         logger.error("Could not save research: %s", exc)
         return 1
-    logger.info("Research %s: %d documents, %d unavailable targets",
-                batch.status, len(batch.documents), len(batch.failures))
+    logger.info("Research %s: %d documents, %d unavailable targets, %d deferred targets",
+                batch.status, len(batch.documents),
+                sum(failure.kind == "unavailable" for failure in batch.failures),
+                sum(failure.kind == "deferred" for failure in batch.failures))
     logger.info("Research saved: %s", destination)
     try:
         weekly = extract_evidence(destination)

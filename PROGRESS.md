@@ -6,11 +6,32 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 
 - [x] Phase 1 — Foundation: entry point, environment configuration, logging, basic evidence models, output directories, and setup instructions.
 - [x] Phase 2 — Research: implement direct-source collection for Stats NZ, RBNZ, MBIE, and SEEK, with explicit reporting of unavailable sources.
-- [ ] Phase 3 — Structured Evidence (in progress): Stats NZ and bounded national SEEK extraction are implemented; MBIE/RBNZ access investigation and evidence coverage decisions remain outstanding.
+- [ ] Phase 3 — Structured Evidence (in progress): Stats NZ and bounded SEEK extraction are live-verified; MBIE HTML extraction is tested but live access remains unavailable; RBNZ collection/extraction is explicitly deferred pending publisher permission.
 - [ ] Phase 4 — Comparison: load historical data, compare metrics, and identify significant changes.
 - [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
 - [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
 - [ ] Phase 7 — Testing and Refinement: complete tests with mocked data and end-to-end acceptance checks.
+
+## 2026-09-11 — Phase 3 MBIE Extraction and RBNZ Access Decision
+
+Access investigation:
+
+- MBIE's official Jobs Online page still returned a 212-character access-challenge shell through the project's robots-aware collector. Official source descriptions identify downloadable CSV/XLSX series, but their actual files and layouts were not retrieved or verified. No values from search results were inserted into research snapshots or accepted facts.
+- RBNZ's website and the separate download host linked by its official data-file index both returned HTTP 403 for robots.txt. Its terms require prior written permission for this type of automated access. RBNZ collection and OCR extraction are explicitly deferred; no permission request was sent on the user's behalf.
+- Source references and conditions for reopening coverage are recorded in the README's MBIE/RBNZ access section.
+
+Implemented:
+
+- `src/mbie_extraction.py` maps the recognised first national quarterly result to `mbie_job_ads_annual_change`, retaining the percentage unit, annual comparison basis, three-month quarter, national scope, and explicit unadjusted-index context. It does not report a vacancy count or calculate a new comparison.
+- Evidence includes exact statement, period, methodology, and visible update-date spans. Validation rejects changed source identity, tampered content, mismatched quarters, unknown wording/units, conflicting totals, and invalid or conflicting dates. Page update dates do not become report publication dates.
+- RBNZ's configured target records `kind: deferred` before any network request. Access failures use `kind: unavailable`; older snapshots remain readable. Both types stay in the weekly audit, with separate counts in the logs.
+- No API keys, new dependencies, download parsers, or OCR values were added.
+
+Validation: 168 offline tests pass with warnings treated as errors, including mocked MBIE collection through extraction and saving, RBNZ deferral without HTTP requests, source/text validation, and regression coverage for Stats NZ/SEEK.
+
+The full live run exited successfully and saved `data/research/2026-W37/20260911T101729764656+1200.json`, `data/weekly/2026-W37.json`, and an immutable extraction audit. It accepted five facts (four Stats NZ and one SEEK), rejected SEEK's inconsistent job-ad period, skipped the SEEK discovery page, and retained MBIE as unavailable and RBNZ as deferred. Existing research/run archives were preserved; the canonical weekly file was updated with this run's evidence. MBIE produced no live fact.
+
+Status: this increment completes the access investigation and adds a tested MBIE extractor, but does not claim working live MBIE/RBNZ coverage. Phase 3 remains in progress. MBIE requires a permitted usable response for live validation; RBNZ requires permission and inspection of accessible official data before extraction can be implemented. CSV/XLSX, regional/industry data, and qualitative evidence remain outside this increment.
 
 ## 2026-09-11 — Phase 3 SEEK Article Evidence
 

@@ -18,6 +18,7 @@ from src.models import (
     ExtractionIssue, ResearchBatch, SourceDocument, WeeklyData, WeeklyFact,
 )
 from src.seek_extraction import extract_seek, validate_seek_fact
+from src.mbie_extraction import extract_mbie, validate_mbie_fact
 
 
 @dataclass(frozen=True)
@@ -178,6 +179,8 @@ def validate_fact(candidate: dict, document: SourceDocument,
     """Check schema and compare every candidate field with its source mapping."""
     if document.source_id == "seek_employment_report":
         return validate_seek_fact(candidate, document, snapshot_file, snapshot_hash)
+    if document.source_id == "mbie_jobs_online":
+        return validate_mbie_fact(candidate, document, snapshot_file, snapshot_hash)
     fact = WeeklyFact.model_validate(candidate)
     blocks = _check_document(document)
     match = re.fullmatch(r"/PageBlocks/(\d+)/Value([2-6]?)", getattr(fact.evidence, "json_pointer", ""))
@@ -207,6 +210,14 @@ def extract_evidence(snapshot_path: Path, *, project_root: Path = PROJECT_ROOT) 
     )
     candidates = []
     for document in batch.documents:
+        if document.source_id == "mbie_jobs_online":
+            try:
+                if document.retrieved_at > batch.completed_at:
+                    raise ValueError("Document retrieval timestamp is after snapshot completion")
+                candidates.append(extract_mbie(document, reference, snapshot_hash))
+            except ValueError as exc:
+                weekly.rejected.append(ExtractionIssue(source_id=document.source_id, reason=str(exc)))
+            continue
         if document.source_id == "seek_employment_report":
             try:
                 if document.retrieved_at > batch.completed_at:

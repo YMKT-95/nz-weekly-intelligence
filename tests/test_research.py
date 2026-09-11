@@ -295,6 +295,42 @@ def test_snapshots_round_trip_and_do_not_overwrite(tmp_path):
     assert ResearchBatch.model_validate_json(destination.read_text()) == batch
 
 
+def test_deferred_rbnz_makes_no_http_requests_and_preserves_other_coverage(tmp_path):
+    requested = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        assert request.url.host == "example.com"
+        return httpx.Response(404) if request.url.path == "/robots.txt" else html_response()
+
+    rbnz = next(s for s in research.SOURCES if s.id == "rbnz_ocr")
+    batch = run_collection(tmp_path, handler, (rbnz, SOURCE))
+    assert batch.status == "partial" and len(batch.documents) == 1
+    failure, = batch.failures
+    assert failure.kind == "deferred"
+    assert "prior written permission" in failure.reason
+    assert len(requested) == 2
+    assert ResearchBatch.model_validate_json(batch.model_dump_json()) == batch
+
+
+def test_mbie_collection_extraction_and_rbnz_deferral(tmp_path, make_mbie_html):
+    from src.extraction import extract_evidence, save_evidence
+    from src.models import WeeklyData
+
+    def handler(request):
+        assert request.url.host == "www.mbie.govt.nz"
+        return httpx.Response(404) if request.url.path == "/robots.txt" else html_response(make_mbie_html())
+
+    sources = tuple(s for s in research.SOURCES if s.id in {"mbie_jobs_online", "rbnz_ocr"})
+    batch = run_collection(tmp_path, handler, sources)
+    weekly = extract_evidence(save_research(batch, tmp_path / "research"), project_root=tmp_path)
+    assert len(weekly.facts) == 1 and not weekly.rejected
+    assert weekly.collection_failures[0].kind == "deferred"
+    archive, canonical = save_evidence(weekly, tmp_path / "weekly")
+    assert archive.read_bytes() == canonical.read_bytes()
+    assert WeeklyData.model_validate_json(canonical.read_text()) == weekly
+
+
 def test_failed_rerun_preserves_successful_snapshot(tmp_path):
     batch = run_collection(tmp_path, lambda request: httpx.Response(404)
                            if request.url.path == "/robots.txt" else html_response())

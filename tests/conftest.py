@@ -87,3 +87,31 @@ def make_seek_document():
         return research.parse_document(source, source.url, content,
                                        datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("Pacific/Auckland")))
     return make
+
+
+@pytest.fixture
+def make_mbie_html():
+    """Synthetic numbers in the official page's supported overview layout."""
+    def make():
+        return """<title>Synthetic MBIE Jobs Online</title><main>
+<h1>Jobs Online</h1>
+<p>All the quarterly data series are no longer being seasonally adjusted. Users are recommended to do annual comparisons to avoid seasonal effects.</p>
+<h2>Jobs Online quarterly release</h2>
+<h3>Overview of key results – Year ended June 2026 quarter</h3>
+<ul><li>Online job advertisements grew by 8.2 per cent in the year to the June 2026 quarter. This is a synthetic observation for testing.</li>
+<li>Online job advertisements grew across 7 out of 9 industries over the year.</li></ul>
+<h3>Download the latest quarterly report</h3>
+<h2>About Jobs Online</h2>
+<p>Jobs Online monitors changes in an index of online job advertisements, not the number of actual online job advertisements.</p>
+<p>Last updated: 14 August 2026</p>
+</main>"""
+    return make
+
+
+@pytest.fixture
+def make_mbie_document(make_mbie_html):
+    def make(content=None):
+        source = next(s for s in research.SOURCES if s.id == "mbie_jobs_online")
+        return research.parse_document(source, source.url, content or make_mbie_html(),
+                                       datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("Pacific/Auckland")))
+    return make

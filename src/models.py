@@ -30,7 +30,7 @@ class TextSpan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    role: Literal["statement", "section", "report_heading", "report_period", "lag", "methodology"]
+    role: Literal["statement", "section", "report_heading", "report_period", "lag", "methodology", "source_date"]
     start: StrictInt = Field(ge=0)
     end: StrictInt = Field(gt=0)
     quote: NonEmptyText
@@ -80,12 +80,12 @@ class WeeklyFact(BaseModel):
     retrieved_at: AwareDatetime
     confidence: Literal["high"] = "high"
     confidence_reason: NonEmptyText
-    extraction_method: Literal["stats_indicator_v1", "seek_article_v1"] = "stats_indicator_v1"
+    extraction_method: Literal["stats_indicator_v1", "seek_article_v1", "mbie_jobs_online_v1"] = "stats_indicator_v1"
     evidence: EvidenceReference | TextEvidenceReference
 
     @model_validator(mode="after")
     def check_dates(self):
-        if (self.extraction_method == "seek_article_v1") != isinstance(self.evidence, TextEvidenceReference):
+        if (self.extraction_method != "stats_indicator_v1") != isinstance(self.evidence, TextEvidenceReference):
             raise ValueError("Evidence reference type must match the extraction method")
         if self.period_start > self.period_end:
             raise ValueError("Data period start must not follow its end")
@@ -126,6 +126,7 @@ class SourceFailure(BaseModel):
     source_url: HttpUrl
     attempted_at: AwareDatetime
     reason: NonEmptyText
+    kind: Literal["unavailable", "deferred"] = "unavailable"
 
 
 class ResearchBatch(BaseModel):
