@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import main
+from src.analysis import WeeklyComparison
 from src.config import Settings, load_settings
 from src.models import ResearchBatch, SourceFailure, WeeklyData
 from src.extraction import extract_evidence
@@ -68,6 +69,10 @@ def test_supported_evidence_is_saved_and_exits_successfully(tmp_path, monkeypatc
     assert batch.status == ("partial" if partial else "complete")
     assert not list(settings.reports_dir.iterdir())
     assert len(list(settings.data_dir.glob("*.json"))) == 1
+    comparison_path, = (settings.data_dir / "comparisons").glob("*.json")
+    comparison = WeeklyComparison.model_validate_json(comparison_path.read_text())
+    assert comparison.previous_file is None
+    assert all(item.status == "baseline" for item in comparison.items)
 
 
 def test_mixed_evidence_and_seek_rejection_are_saved_by_command(
@@ -92,3 +97,24 @@ def test_mixed_evidence_and_seek_rejection_are_saved_by_command(
     assert weekly.facts[-1].metric == "seek_applications_per_ad_change"
     assert len(list(settings.data_dir.glob("runs/*/*.json"))) == 1
     assert not list(settings.reports_dir.iterdir())
+
+
+def test_comparison_save_failure_leaves_evidence_and_exits_nonzero(
+        tmp_path, monkeypatch, make_stats_document):
+    settings = Settings(data_dir=tmp_path / "weekly", reports_dir=tmp_path / "reports",
+                        research_dir=tmp_path / "research", timezone=ZoneInfo("Pacific/Auckland"))
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    doc = make_stats_document()
+
+    def collect(settings, report_week, week_start, week_end):
+        return ResearchBatch(report_week=report_week, week_start=week_start, week_end=week_end,
+                             started_at=doc.retrieved_at, completed_at=doc.retrieved_at, documents=[doc])
+
+    def fail(*args):
+        raise OSError("Synthetic comparison write failure")
+
+    monkeypatch.setattr(main, "collect_research", collect)
+    monkeypatch.setattr(main, "save_comparison", fail)
+    assert main.main() == 1
+    assert len(list(settings.data_dir.glob("*.json"))) == 1
+    assert len(list(settings.data_dir.glob("runs/*/*.json"))) == 1

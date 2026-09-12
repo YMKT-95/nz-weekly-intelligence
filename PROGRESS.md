@@ -6,11 +6,31 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 
 - [x] Phase 1 — Foundation: entry point, environment configuration, logging, basic evidence models, output directories, and setup instructions.
 - [x] Phase 2 — Research: implement direct-source collection for Stats NZ, RBNZ, MBIE, and SEEK, with explicit reporting of unavailable sources.
-- [ ] Phase 3 — Structured Evidence (in progress): Stats NZ and bounded SEEK extraction are live-verified; MBIE HTML extraction is tested but live access remains unavailable; RBNZ collection/extraction is explicitly deferred pending publisher permission.
-- [ ] Phase 4 — Comparison: load historical data, compare metrics, and identify significant changes.
+- [x] Phase 3 — Structured Evidence (supported MVP scope): Stats NZ and bounded SEEK extraction are live-verified; MBIE HTML extraction is fixture-tested. MBIE live validation and RBNZ permission/extraction remain explicit coverage follow-ups, not completed live integrations.
+- [x] Phase 4 — Comparison: select previous available weekly evidence, classify observations/revisions/missing coverage, calculate comparable differences, and flag changes with explicit review thresholds.
 - [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
 - [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
 - [ ] Phase 7 — Testing and Refinement: complete tests with mocked data and end-to-end acceptance checks.
+
+## 2026-09-12 — Phase 4 Historical Comparison
+
+Phase 3 is closed for the supported MVP scope, following the decision to proceed with documented unavailable/deferred sources. This does not resolve MBIE live access or implement RBNZ OCR extraction; those remain coverage follow-ups.
+
+Implemented:
+
+- `src/analysis.py` loads the most recent valid, non-empty earlier weekly file. Current-week reruns and future files are excluded; malformed files are skipped with audit notes, and missing weeks are represented by the actual week gap.
+- Matching includes publisher, metric/category, unit, comparison basis, geography, scope, and adjustment. Each file contributes its latest observation for each series. Conflicting latest observations and incompatible periods produce no arithmetic.
+- Comparison distinguishes baselines, newly covered/missing series, repeated observations, same-period revisions, later periods, older observations, and incompatible evidence. Missing values never become zero; repeated data never establishes a stable market.
+- Differences in percentage rates use percentage points, while people-count differences use people. New-period review flags use explicit, editable thresholds; they are not claims of statistical significance. Revisions retain their differences separately.
+- A limited national labour-direction interpretation requires new-period evidence across at least two supported themes. It is not a graduate hiring assessment or the Job Search Index.
+- `main.py` saves a comparison after evidence extraction. Each comparison references the immutable current evidence archive and selected earlier file with hashes, original facts, and fact pointers. Outputs have a per-run archive and atomic weekly view under `data/weekly/comparisons/`.
+- No history is a successful baseline run. Comparison failure returns nonzero while preserving saved evidence and any previous comparison view. No API, dependency, score, or report generation was added.
+
+Validation: 208 offline tests pass with warnings treated as errors. Added cases for increases/decreases/unchanged values, percentage-point versus count units, revisions, missing series, incompatible metadata, rolling periods, variable month lengths, historical gaps/corruption, ISO-year boundaries, conflicting observations, review thresholds, direction interpretation, and output failures.
+
+The live run on 12 September exited successfully and saved five accepted facts plus `data/weekly/comparisons/2026-W37.json` and its immutable run archive. There is no earlier weekly file in this workspace, so all five comparisons correctly have `baseline` status and labour direction is `insufficient_data`. Cross-week movements were verified using synthetic historical fixtures, not invented live history. Research is archived at `data/research/2026-W37/20260912T174125821475+1200.json`.
+
+Remaining limits: MBIE is still unavailable and RBNZ deferred. SEEK's inconsistent job-ad period remains rejected. Thresholds require future calibration; multi-year extremes, policy/news interpretation, and complete revised historical series are outside this bounded comparison increment. Phase 5 scoring is next.
 
 ## 2026-09-11 — Phase 3 MBIE Extraction and RBNZ Access Decision
 

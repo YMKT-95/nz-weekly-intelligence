@@ -2,7 +2,7 @@
 
 A personal, local Python tool for IT graduates seeking employment in New Zealand. The goal is to research relevant information each week, compare changes over time, and generate a Markdown report supported by traceable evidence.
 
-**Phase 3 is in progress:** structured Stats NZ indicators and supported national statements from SEEK and MBIE can now be extracted into validated weekly JSON. Accepted facts retain their original fields or exact article passages, including period and scope context. Rejected candidates and unprocessed sources are recorded separately. It runs without API keys. MBIE live access remains unavailable on the tested network, and RBNZ collection/extraction is deferred pending written permission. Broader article extraction, LLM integration, historical comparison, scoring, and Markdown report generation remain outstanding.
+**Phase 4 is implemented:** the script collects source material, saves traceable validated facts, and compares them with the most recent usable earlier weekly evidence. It distinguishes repeated observations, revisions, new periods, and missing coverage, with explicit numerical review thresholds. It runs without API keys. Phase 3 is closed for the supported MVP scope; MBIE live access remains unavailable on the tested network, and RBNZ collection/extraction remains deferred pending permission. Scoring and Markdown report generation are the next phases.
 
 See the [MVP specification](docs/mvp-specification.md) for the project scope and [project progress](PROGRESS.md) for phase status and validation records.
 
@@ -41,12 +41,12 @@ python main.py
 
 The logs show the ISO report week, its Monday-to-Sunday date range, the actual run time with its timezone, and the output directories. During a midweek run, Sunday marks the end of the report week; it does not imply that information from future dates has been collected.
 
-A run that extracts at least one accepted fact and saves the evidence exits with code `0`, even when other sources fail. Partial research coverage, rejected candidates, and unprocessed sources are recorded in the output. Invalid configuration, an output error, or no accepted facts results in exit code `1`. Even if no facts are accepted, the script saves the research and extraction audit when the output directory is writable, preserving any existing weekly evidence file.
+A run that extracts at least one accepted fact and saves both evidence and comparison exits with code `0`, even when other sources fail or there is no previous weekly file. Partial research coverage, rejected candidates, and unprocessed sources are recorded in the output. Invalid configuration, an output error, or no accepted facts results in exit code `1`. Even if no facts are accepted, the script saves the research and extraction audit when the output directory is writable, preserving any existing weekly evidence file.
 
-The final log line after saving accepted facts is:
+The final log line after saving evidence and comparison is:
 
 ```text
-[INFO] Evidence extraction complete. Comparison, scoring, and reports are not yet connected.
+[INFO] Evidence comparison complete. Scoring and reports are not yet connected.
 ```
 
 Each run saves a separate JSON file under `data/research/YYYY-WXX/`, named with its start timestamp, including microseconds and UTC offset. Repeated runs preserve earlier snapshots, including when a later run fails. Generated research files are excluded from Git.
@@ -57,6 +57,38 @@ Research snapshots remain collected source material. Accepted facts and the vali
 - `data/weekly/runs/YYYY-WXX/<timestamp>.json`: a preserved audit for each extraction run, including runs that accepted no facts.
 
 The weekly file is replaced atomically only after its new content is written successfully. A later partial run with accepted facts replaces it with that run's evidence; facts from different runs are not silently combined. Earlier results remain in the run archive. A run with no accepted facts leaves the weekly file unchanged, so always check the command's exit code and output timestamps. No Markdown report is generated yet. All generated files are excluded from Git.
+
+## Historical Comparison
+
+`src/analysis.py` compares the current run's immutable evidence archive with the most recent usable earlier canonical file under `data/weekly/`. It accepts evidence schema versions 2 and 3 and validates the report's ISO week, calendar boundaries, collection timestamp, and fact retrieval timestamps. Current-week reruns, future weeks, nested run archives, and unrelated files are not historical baselines. Invalid, unreadable, or empty earlier files are skipped with audit notes. A missing week is allowed, and `weeks_apart` records the actual gap. All metrics use the same selected historical file; values are not silently filled from different older weeks.
+
+Each series is identified by publisher, category, metric, unit, comparison basis, geography, scope, and adjustment. The latest data period for that series is selected in each file. Conflicting latest values are retained for review without arithmetic. A changed publisher, unit, adjustment, or comparison basis creates separate series rather than an invalid numerical comparison.
+
+Comparison statuses distinguish:
+
+- `baseline`: no usable earlier weekly file; change is unknown.
+- `new_series`: no matching series in the selected earlier file; this does not prove a new publication.
+- `missing_current`: a previous series is absent now; its value is not zero.
+- `unchanged_observation`: the same value and period were collected again; this does not establish a stable market.
+- `revised_observation`: the recorded value for the same period changed; a revision/correction difference is kept separately from new-period movement.
+- `new_observation`: a later period with the same period definition is available, even when its value is unchanged.
+- `older_observation`: current coverage contains an older period; no backwards change is calculated.
+- `not_comparable`: latest values conflict or period definitions differ; no change is calculated.
+
+Percentage levels and percentage growth rates are subtracted in **percentage points**. For example, 5.4% to 5.6% is +0.2 percentage points, and -4% annual growth to -2% is +2 percentage points in the growth rate, while growth remains negative. People counts produce count differences. These are differences between the recorded data periods, not newly calculated weekly/monthly/annual growth rates. Rolling annual windows may overlap; full calendar months remain comparable despite different numbers of days. Only later comparable periods receive review flags; repeated observations and revisions do not enter new-period direction assessment.
+
+`REVIEW_RULES` in `src/analysis.py` defines editable MVP thresholds: 0.2 percentage points for unemployment rate and its quarterly change, 5,000 people for unemployed count, 0.5 percentage points for CPI annual growth, 1 percentage point for supported SEEK growth rates, and 2 percentage points for MBIE annual growth. Absolute differences at or above a threshold are `review_worthy`. These are initial analytical choices to calibrate with experience, not statistical significance tests. Unknown series semantics have no threshold.
+
+`labour_direction` is a limited interpretation of supported new-period national signals across unemployment, job availability, and competition. At least two themes must have new comparable observations; unemployment rate/count/change are not treated as three independent themes. Significant favourable and adverse movements produce `mixed`; only favourable or adverse movements produce `improving` or `deteriorating`; movements below the review thresholds produce `stable`. Otherwise the result is `insufficient_data`. CPI has no automatic favourable/adverse classification. This does not estimate graduate hiring prospects or calculate the Job Search Index.
+
+Comparison output is saved separately:
+
+- `data/weekly/comparisons/YYYY-WXX.json`: the latest successfully saved comparison for that week.
+- `data/weekly/comparisons/runs/YYYY-WXX/<evidence-run-timestamp>.json`: immutable comparison audit for that evidence run.
+
+The output records both input file paths, hashes, report weeks, selected facts with their original evidence references and `/facts/<index>` locations, history notes, statuses, deltas, and review rules. Paths refer to local files; all generated outputs remain ignored by Git. Comparison trusts the accepted evidence format and does not rerun source extraction on old facts; hashes and embedded facts identify exactly what was compared.
+
+The comparison file is replaced atomically after archiving. If comparison fails, already-saved evidence is retained and the command exits `1`; an older comparison file may remain, so check the exit code and its referenced current evidence file. If no facts are accepted, the command preserves existing weekly evidence and comparison files and exits `1`. A successful first run saves baseline statuses and an insufficient-data direction.
 
 ## Direct Sources
 
@@ -126,7 +158,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, numerical validation, exact text spans, reporting lags, national scope, monthly/annual distinctions, conflicting evidence, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
+Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, historical file selection, period-aware comparisons, revisions, missing coverage, review thresholds, numerical validation, exact text spans, reporting lags, national scope, monthly/annual distinctions, conflicting evidence, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
 
 ## Project Structure
 
@@ -135,6 +167,7 @@ nz-weekly-intelligence/
 ├── main.py              # Startup, report week calculation, collection, and saving
 ├── src/
 │   ├── __init__.py
+│   ├── analysis.py      # Historical selection, comparison, review flags, and saving
 │   ├── config.py        # Environment variables, timezone, and project paths
 │   ├── extraction.py    # Deterministic extraction, validation, and evidence saving
 │   ├── mbie_extraction.py # MBIE national annual changes and text evidence
@@ -168,4 +201,6 @@ nz-weekly-intelligence/
 
 ## Next Steps
 
-Phase 3 has live-verified Stats NZ and bounded SEEK extraction, plus MBIE HTML extraction verified with synthetic fixtures. Broader article layouts, CSV/spreadsheet evidence, and qualitative claims require additional rules or a future LLM service. MBIE live validation remains blocked by access; RBNZ is explicitly deferred pending the publisher's permission and a supported data route. Phase 3 remains in progress, with these coverage limits documented. Search API integration is deferred by choice. Graduate vacancy discovery, broader international context, and additional source coverage remain future work. Historical comparison, deterministic scoring, and report generation follow in their respective phases.
+Phase 5 adds the deterministic Job Search Index, including explicit rules for missing components. Phase 6 adds report generation, followed by end-to-end refinement. Historical comparison is implemented, while broader history analysis (multi-year highs/lows and revision-aware reconstruction of entire series) remains future work.
+
+Source-coverage follow-ups remain tracked separately: live validation of MBIE when permitted usable content is available, and RBNZ permission/access investigation before implementing OCR extraction. Broader article layouts, CSV/spreadsheet evidence, qualitative claims, graduate vacancy discovery, and international context remain extensions. Search API integration is deferred by choice.
