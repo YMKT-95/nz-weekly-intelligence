@@ -2,7 +2,7 @@
 
 A personal, local Python tool for IT graduates seeking employment in New Zealand. The goal is to research relevant information each week, compare changes over time, and generate a Markdown report supported by traceable evidence.
 
-**Phase 4 is implemented:** the script collects source material, saves traceable validated facts, and compares them with the most recent usable earlier weekly evidence. It distinguishes repeated observations, revisions, new periods, and missing coverage, with explicit numerical review thresholds. It runs without API keys. Phase 3 is closed for the supported MVP scope; MBIE live access remains unavailable on the tested network, and RBNZ collection/extraction remains deferred pending permission. Scoring and Markdown report generation are the next phases.
+**Phase 6 report generation is implemented, with optional OpenAI interpretation and a local template fallback.** The script collects sources, validates facts, compares history, calculates supported provisional components, and saves a Markdown report. The full live six-component index remains unavailable. MBIE live access, RBNZ permission, graduate availability, IT demand, and automation-pressure coverage remain unresolved. Live LLM validation requires your own API key; this is not yet the complete original MVP.
 
 See the [MVP specification](docs/mvp-specification.md) for the project scope and [project progress](PROGRESS.md) for phase status and validation records.
 
@@ -28,7 +28,11 @@ cp .env.example .env
 
 - `REPORT_TIMEZONE`: defaults to `Pacific/Auckland`.
 - `RESEARCH_TIMEOUT_SECONDS`: HTTP connect/read/write/pool timeout; defaults to `20`, with an allowed range greater than `0` and at most `120`. This is not a deadline for the entire run.
-- `LLM_API_KEY`, `LLM_MODEL`, and `SEARCH_API_KEY`: reserved for future service integrations and may remain empty for now.
+- `LLM_PROVIDER`: `none` by default; set `openai` to request interpretation. The example file selects OpenAI.
+- `LLM_API_KEY`: your OpenAI API key; never commit it. A missing key produces a visibly labelled template fallback.
+- `LLM_MODEL`: defaults to `gpt-4.1-mini-2025-04-14`; choose a model available to your API account that supports Responses structured outputs.
+- `LLM_TIMEOUT_SECONDS`: connect/read/write/pool timeout for the LLM call, default `45`, greater than `0` and at most `120`; not an overall run deadline.
+- `SEARCH_API_KEY`: reserved for a future search integration.
 
 Existing environment variables take precedence over `.env`. The configuration file is always loaded from the project root, regardless of the working directory. Do not commit real credentials; `.env` is excluded by `.gitignore`, and API keys are not written to logs.
 
@@ -41,12 +45,12 @@ python main.py
 
 The logs show the ISO report week, its Monday-to-Sunday date range, the actual run time with its timezone, and the output directories. During a midweek run, Sunday marks the end of the report week; it does not imply that information from future dates has been collected.
 
-A run that extracts at least one accepted fact and saves both evidence and comparison exits with code `0`, even when other sources fail or there is no previous weekly file. Partial research coverage, rejected candidates, and unprocessed sources are recorded in the output. Invalid configuration, an output error, or no accepted facts results in exit code `1`. Even if no facts are accepted, the script saves the research and extraction audit when the output directory is writable, preserving any existing weekly evidence file.
+A run that extracts at least one accepted fact and saves evidence, comparison, scoring, and a Markdown report exits with code `0`, even when other sources fail, there is no previous weekly file, or the overall index is unavailable because evidence is incomplete. Partial research coverage, rejected candidates, and unprocessed sources are recorded in the output. Invalid configuration, an output error, or no accepted facts results in exit code `1`. Even if no facts are accepted, the script saves the research and extraction audit when the output directory is writable, preserving any existing weekly evidence file.
 
-The final log line after saving evidence and comparison is:
+The final log line identifies the generated report, for example:
 
 ```text
-[INFO] Evidence comparison complete. Scoring and reports are not yet connected.
+[INFO] Weekly Markdown report saved: /path/to/nz-weekly-intelligence/reports/2026-W37.md
 ```
 
 Each run saves a separate JSON file under `data/research/YYYY-WXX/`, named with its start timestamp, including microseconds and UTC offset. Repeated runs preserve earlier snapshots, including when a later run fails. Generated research files are excluded from Git.
@@ -56,7 +60,7 @@ Research snapshots remain collected source material. Accepted facts and the vali
 - `data/weekly/YYYY-WXX.json`: the most recent run with at least one accepted fact for that week.
 - `data/weekly/runs/YYYY-WXX/<timestamp>.json`: a preserved audit for each extraction run, including runs that accepted no facts.
 
-The weekly file is replaced atomically only after its new content is written successfully. A later partial run with accepted facts replaces it with that run's evidence; facts from different runs are not silently combined. Earlier results remain in the run archive. A run with no accepted facts leaves the weekly file unchanged, so always check the command's exit code and output timestamps. No Markdown report is generated yet. All generated files are excluded from Git.
+The weekly file is replaced atomically only after its new content is written successfully. A later partial run with accepted facts replaces it with that run's evidence; facts from different runs are not silently combined. Earlier results remain in the run archive. A run with no accepted facts leaves the weekly file unchanged, so always check the command's exit code and output timestamps. Existing reports are preserved on an evidence failure; their timestamps may therefore be older than the failed attempt. All generated files are excluded from Git.
 
 ## Historical Comparison
 
@@ -89,6 +93,52 @@ Comparison output is saved separately:
 The output records both input file paths, hashes, report weeks, selected facts with their original evidence references and `/facts/<index>` locations, history notes, statuses, deltas, and review rules. Paths refer to local files; all generated outputs remain ignored by Git. Comparison trusts the accepted evidence format and does not rerun source extraction on old facts; hashes and embedded facts identify exactly what was compared.
 
 The comparison file is replaced atomically after archiving. If comparison fails, already-saved evidence is retained and the command exits `1`; an older comparison file may remain, so check the exit code and its referenced current evidence file. If no facts are accepted, the command preserves existing weekly evidence and comparison files and exits `1`. A successful first run saves baseline statuses and an insufficient-data direction.
+
+## Provisional Scoring
+
+`src/scoring.py` implements the six-component calculator and three bounded proxy mappings. Read [the scoring policy](docs/scoring-policy.md) for the formulas, source criteria, provisional age limits, fallback behaviour, and limitations. These rules represent declared judgments rather than objective measurements or calibrated hiring probabilities. They do not use Phase 4 review flags to add or subtract points.
+
+The weights are job availability 25%, graduate availability 20%, competition 20%, economy 15%, IT demand 10%, and automation pressure 10%. Every scored component retains its exact accepted fact, evidence-file reference, selected rule, data age, reason, and limitations. Job availability prefers eligible SEEK monthly trend growth and otherwise uses the separately defined MBIE annual unadjusted mapping. Competition uses lagged national applications-per-ad growth. The economy mapping uses unemployment alone as a narrow proxy, without mechanically scoring CPI or double-counting unemployment measures.
+
+Graduate availability, IT demand, and automation pressure have no supported mapping yet. Missing, stale, incompatible, or conflicting evidence produces an unavailable component. There is no neutral placeholder, zero substitution, historical backfill, or weight redistribution. `overall_score` stays `null` and `status` is `insufficient_evidence` until all six components are scored. `covered_weight_percent` describes the share of component weight with scores, not confidence or a partial index.
+
+Data age is measured from the data period's end to the evidence run's collection date. Recollection and page updates do not refresh old observations. Component formulas are clipped to 0–10 and rounded to two decimals; the complete weighted index is rounded to one decimal with decimal ROUND_HALF_UP. The output records a policy version and checksum. Index comparisons require two complete results with compatible methods and input definitions; source switches, policy changes, revisions, and older observations do not produce a new-period index trend.
+
+Outputs are separate from factual evidence and comparison:
+
+- `data/weekly/scores/YYYY-WXX.json`: latest successfully saved scoring result, including incomplete results.
+- `data/weekly/scores/runs/YYYY-WXX/<evidence-run-timestamp>.json`: immutable audit for each scoring run.
+
+An incomplete scoring result replaces an older weekly score view, preventing an obsolete complete index from being presented as current. A scoring failure returns exit code `1` and leaves already-saved evidence/comparison intact; an old score view may remain, so inspect the command exit code and referenced evidence before using it. With no accepted facts, the existing extraction failure path preserves earlier views and exits nonzero.
+
+The latest validated live run scored only competition and the unemployment-based economic proxy, covering 35% of the specified weight. It correctly produced no overall index. Synthetic complete-input tests verify all six-component arithmetic and history handling; they do not establish six-component live evidence coverage.
+
+## Markdown Reports and OpenAI Setup
+
+`src/reporting.py` renders the specification's report sections from saved evidence, comparison, and scoring archives. It checks that the inputs reference the same evidence path, week, checksum, timestamp, and fact pointers. Selected historical files must still match their recorded hashes. This checks provenance; it does not repeat extraction or independently validate the publishers' statistics.
+
+Facts retain their units, comparison basis, observation periods, source links, and known/unknown publication and update dates. Baselines, repeated observations, revisions, later periods, and missing series remain distinct. Unsupported graduate, global, and NZX coverage is explicit. The overall index remains unavailable until every component has a supported score. General job-search suggestions and heuristic/LLM interpretation are labelled separately from facts.
+
+Outputs:
+
+- `reports/YYYY-WXX.md`: the latest successfully saved weekly report.
+- `reports/runs/YYYY-WXX/<evidence-run-timestamp>.md`: immutable report archive.
+- `reports/runs/YYYY-WXX/<evidence-run-timestamp>.json`: report checksum and narration audit, including status, configured model, prompt version, request checksum, response ID when available, and accepted interpretation notes.
+
+The report records evidence/comparison/scoring hashes. Archives and the audit are written before the weekly view is atomically replaced. If reporting fails, the command exits `1`, preserves the earlier weekly report, and retains already-saved pipeline stages. Outputs from a failed run can therefore have different ages; inspect exit status and provenance. A narration failure alone is a successful, visibly labelled template fallback. Re-running `main.py` creates a fresh evidence/report run; replaying the exact same run into the same report directory cannot overwrite its archive.
+
+To enable OpenAI:
+
+1. Create an API key in the [OpenAI API dashboard](https://platform.openai.com/api-keys), following the [official quickstart](https://developers.openai.com/api/docs/quickstart). The account must have API access and sufficient quota/billing for the chosen model.
+2. Create `.env` from `.env.example` if it does not already exist. Edit the existing file otherwise; do not overwrite your credentials.
+3. Set `LLM_PROVIDER=openai`, paste the key into `LLM_API_KEY`, and keep `LLM_MODEL=gpt-4.1-mini-2025-04-14` for the initial integration. This documented [model snapshot](https://developers.openai.com/api/docs/models/gpt-4.1-mini) supports Responses and structured outputs; account access can vary.
+4. Run `python main.py`. Check `Report narration:` in the logs and the report's status. `generated` means interpretation passed the format/reference checks; `fallback` explains why only the template was used. To disable API calls, set `LLM_PROVIDER=none`.
+
+`src/narration.py` uses the [Responses structured-output API](https://developers.openai.com/api/docs/guides/structured-outputs) through the existing HTTPX dependency. Each enabled run sends one compact summary of accepted public evidence, comparison statuses, provisional scores, and coverage gaps to OpenAI. It does not send raw articles, credentials in prompts, local file paths, or source snapshots. The request has no search/tools, no automatic retries or redirects, a 1,200-output-token limit, bounded input/response sizes, and `store=false`. This is not a promise of zero provider retention. API use is billed by the provider; repeated runs can incur further charges.
+
+Python writes every factual/numerical section and source link. The LLM returns only short interpretation notes plus existing fact IDs. Unknown references, digits, percentage/currency symbols, URLs, selected markup, malformed output, refusals, incomplete responses, and transport/API errors trigger a template fallback with a safe diagnostic. Provider response bodies and exceptions are not echoed into logs. Source-derived text and generated prose are escaped before Markdown rendering.
+
+These checks constrain format and references; they **do not prove semantic support or eliminate hallucinations**, including unsupported claims expressed in words. Generated notes are labelled as requiring review. No LLM text enters accepted evidence, comparison arithmetic, or scoring. Live quality evaluation and stronger semantic checks belong to Phase 7; LLM extraction and search remain deferred.
 
 ## Direct Sources
 
@@ -158,7 +208,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, historical file selection, period-aware comparisons, revisions, missing coverage, review thresholds, numerical validation, exact text spans, reporting lags, national scope, monthly/annual distinctions, conflicting evidence, snapshot persistence, and CLI failure handling. Live HTTP is blocked by the test setup.
+Tests use synthetic HTML/JSON and HTTPX mock responses. They cover source parsing, period and date preservation, access rules, redirects, timeouts, partial failures, source-to-fact matching, historical file selection, period-aware comparisons, revisions, missing coverage, review thresholds, numerical validation, exact text spans, reporting lags, national scope, monthly/annual distinctions, conflicting evidence, snapshot persistence, scoring weights, rounding, missing/stale data, method compatibility, report provenance, API contracts/fallbacks, and CLI failure handling. Live HTTP is blocked by the test setup.
 
 ## Project Structure
 
@@ -173,11 +223,14 @@ nz-weekly-intelligence/
 │   ├── mbie_extraction.py # MBIE national annual changes and text evidence
 │   ├── models.py        # Pydantic research, evidence, and weekly data models
 │   ├── research.py      # Direct-source collection, parsing, and snapshot saving
+│   ├── reporting.py     # Markdown report rendering and atomic persistence
+│   ├── narration.py     # Optional OpenAI interpretation with validated references
+│   ├── scoring.py       # Provisional components, strict aggregation, and scoring history
 │   └── seek_extraction.py # National SEEK statements, periods, and text evidence
 ├── data/
 │   ├── research/        # Local source snapshots grouped by report week
 │   └── weekly/          # Accepted weekly facts and per-run extraction audits
-├── reports/             # Future Markdown reports
+├── reports/             # Weekly Markdown reports and per-run audits
 ├── tests/               # Offline collection and CLI tests
 ├── docs/
 │   └── mvp-specification.md
@@ -201,6 +254,6 @@ nz-weekly-intelligence/
 
 ## Next Steps
 
-Phase 5 adds the deterministic Job Search Index, including explicit rules for missing components. Phase 6 adds report generation, followed by end-to-end refinement. Historical comparison is implemented, while broader history analysis (multi-year highs/lows and revision-aware reconstruction of entire series) remains future work.
+Phase 5's engine is implemented; sufficient evidence and defensible mappings for the complete live six-component index remain outstanding. Phase 6 now generates reports that explicitly communicate this limitation. Next is a credential-backed OpenAI smoke test and Phase 7 end-to-end/quality refinement. Historical comparison is implemented, while broader history analysis (multi-year highs/lows and revision-aware reconstruction of entire series) remains future work.
 
 Source-coverage follow-ups remain tracked separately: live validation of MBIE when permitted usable content is available, and RBNZ permission/access investigation before implementing OCR extraction. Broader article layouts, CSV/spreadsheet evidence, qualitative claims, graduate vacancy discovery, and international context remain extensions. Search API integration is deferred by choice.

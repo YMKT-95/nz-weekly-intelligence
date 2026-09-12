@@ -8,9 +8,49 @@ Incrementally build a local Python weekly intelligence tool, using the [MVP spec
 - [x] Phase 2 — Research: implement direct-source collection for Stats NZ, RBNZ, MBIE, and SEEK, with explicit reporting of unavailable sources.
 - [x] Phase 3 — Structured Evidence (supported MVP scope): Stats NZ and bounded SEEK extraction are live-verified; MBIE HTML extraction is fixture-tested. MBIE live validation and RBNZ permission/extraction remain explicit coverage follow-ups, not completed live integrations.
 - [x] Phase 4 — Comparison: select previous available weekly evidence, classify observations/revisions/missing coverage, calculate comparable differences, and flag changes with explicit review thresholds.
-- [ ] Phase 5 — Job Search Index: define component scoring rules and calculate the index deterministically in Python.
-- [ ] Phase 6 — Report Generation: generate Markdown reports from supplied evidence.
+- [ ] Phase 5 — Job Search Index (engine implemented; full live index pending): strict six-component calculation, provisional supported mappings, freshness/coverage rules, scoring history, and persistence are implemented. Suitable evidence/mappings for all six live components remain outstanding.
+- [ ] Phase 6 — Report Generation (pipeline implemented; live LLM validation pending): Markdown reports and optional OpenAI interpretation with template fallback are implemented and tested offline. A live report was generated; a credential-backed OpenAI call remains pending.
 - [ ] Phase 7 — Testing and Refinement: complete tests with mocked data and end-to-end acceptance checks.
+
+## 2026-09-13 — Phase 6 Reports and OpenAI Integration
+
+Decision: proceed with report generation while the full live six-component index remains unavailable. The user requested LLM API configuration now. OpenAI was used as the stated default while provider preference was pending; no key was supplied in the session.
+
+Implemented:
+
+- Added `src/reporting.py` and connected the report stage after scoring in `main.py`. Reports include the specification's sections, accepted numbers and source links, explicit observation/date metadata, historical comparison semantics, provisional components, coverage gaps, and general job-search suggestions.
+- Validate that saved stage inputs refer to the same immutable evidence run and exact accepted facts. Historical input hashes must still match. Reports include input and scoring-policy checksums for audit.
+- Added `src/narration.py` using OpenAI's Responses API and strict JSON-schema output through HTTPX. The model receives a compact evidence summary and returns short interpretation notes with existing fact IDs. Python retains control of all numerical sections and citations.
+- LLM output is labelled as interpretation requiring review. Schema/reference checks, numeric/link/markup restrictions, input/response limits, refusals, incomplete results, API errors and timeouts lead to a visibly labelled template fallback. These checks do not prove semantic entailment or remove all hallucination risk.
+- Added explicit provider/model/timeout configuration, setup instructions and an ignored local `.env` with a blank key. The initial model is the documented `gpt-4.1-mini-2025-04-14` snapshot. One request per run, no retries/tools/redirects, bounded output tokens, and `store=false`; no raw articles or local evidence paths are sent.
+- Save an immutable Markdown report and narration audit before atomically replacing `reports/YYYY-WXX.md`. Report failures preserve previous reports and earlier pipeline stages; unavailable narration alone still produces a successful template report.
+
+Validation: 305 offline tests pass with warnings treated as errors. Added report structure, dates/units/citations, missing and synthetic complete indices, history/revision semantics, input tampering, output persistence/failures, API request contracts, safe error diagnostics, references, malformed/refused output, response limits, and configuration checks. `git diff --check` passes.
+
+The live end-to-end run exited `0`, producing `reports/2026-W37.md` and the report/audit archive for `20260913T032721710436+1200`. It accepted five facts, rejected the inconsistent SEEK job-ad period, retained MBIE as unavailable and RBNZ as deferred, and scored competition/economy with 35% component-weight coverage and no overall index. Research: `data/research/2026-W37/20260913T032655356578+1200.json`. Evidence: `data/weekly/runs/2026-W37/20260913T032721710436+1200.json`.
+
+The live report used the template fallback because `LLM_API_KEY` is missing. No paid OpenAI request was made. Live API compatibility/account access and interpretation quality remain unverified until the user adds a key locally. Phase 6 is therefore not marked fully complete. Phase 7 will refine end-to-end acceptance and prose quality; broader evidence coverage and the full six-component index remain separate follow-ups. Changes were left unstaged and uncommitted for the user.
+
+## 2026-09-12 — Phase 5 Provisional Scoring Engine
+
+Scope: implement the scoring engine with honest incomplete results, rather than claim a live six-component index. The supported mappings are deliberately provisional and documented in `docs/scoring-policy.md`.
+
+Implemented:
+
+- Added `src/scoring.py` with fixed specification weights, strict numeric/range validation, decimal weighted calculation, explicit HALF_UP rounding, component models, and aggregate consistency checks.
+- Added separate job-availability mappings for eligible SEEK monthly trend growth and fallback MBIE annual unadjusted growth. Added a national applications-growth proxy for competition and an unemployment-only economic proxy. These are judgments, not objectively calibrated measures of graduate prospects.
+- Source/unit/basis/adjustment/method and period shape must match. Freshness uses the evidence period end, not retrieval or page-update recency. Conflicting latest observations are not replaced by convenient older values. Selected evidence, rules, ages, issues, and limitations are preserved.
+- Graduate availability, IT demand, and automation pressure remain unavailable. An overall index requires all six components; missing data is never zero, neutral, backfilled, or reweighted. Coverage percentage is explicitly not confidence.
+- Added scoring history with input hashes, policy version/checksum, and method compatibility checks. Incomplete indices, changed methods, same-period revisions, and older/incompatible evidence do not produce a misleading numerical trend.
+- Connected scoring to `main.py`, with atomic weekly views and immutable run archives under `data/weekly/scores/`. Honest incomplete results are saved successfully; write failures return nonzero while preserving evidence and comparison.
+
+Validation: 256 offline tests pass with warnings treated as errors. Added coverage for weights, bounds, rounding, missing values, mapping anchors, source/basis mismatch, freshness boundaries, conflicting evidence, fallback sources, incomplete history, method switches, revisions, persistence, and command-level scoring failure. Complete six-component fixtures are explicitly synthetic.
+
+The full live run exited successfully and saved `data/weekly/scores/2026-W37.json` and its immutable audit. Five source facts yielded two provisional component scores: competition 4.2 and the unemployment-based economy proxy 6.75, covering 35% of specified component weight. The overall index is `null` with `insufficient_evidence`. Job availability remains unscored because the SEEK observation is rejected and MBIE unavailable; the other three missing components have no suitable implemented evidence mapping. No historical score is available for comparison.
+
+Research snapshot: `data/research/2026-W37/20260912T193446913700+1200.json`. Evidence archive: `data/weekly/runs/2026-W37/20260912T193511153226+1200.json`. Earlier archives are preserved.
+
+Status: the bounded Phase 5 engine is implemented and verified. The full live index remains outstanding, so Phase 5 is not marked fully complete. Phase 6 can generate reports from existing evidence and explicitly state these gaps. Publishing the original complete six-component index still requires additional evidence and evaluated rules.
 
 ## 2026-09-12 — Phase 4 Historical Comparison
 
@@ -130,8 +170,8 @@ Current limitations: external research and LLM services are not connected. The s
 
 ## Decisions for Upcoming Phases
 
-- Select an LLM service for evidence extraction; add a search service when broader discovery is needed.
-- Define how evidence maps to component scores and how missing data should be handled.
+- OpenAI report interpretation is implemented; validate it with a local API key. LLM evidence extraction and broader search discovery remain deferred.
+- Expand evidence coverage and evaluate provisional scoring mappings before publishing the full six-component index.
 
 ## Progress Tracking
 

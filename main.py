@@ -7,6 +7,8 @@ from src.config import load_settings
 from src.extraction import extract_evidence, save_evidence
 from src.research import collect_research, save_research
 from src.analysis import compare_evidence, save_comparison
+from src.scoring import score_evidence, save_score
+from src.reporting import build_report, save_report
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logger.info("Starting weekly intelligence script (Phase 4 evidence comparison)")
+    logger.info("Starting weekly intelligence script (Phase 6 evidence-led report)")
 
     try:
         settings = load_settings()
@@ -63,7 +65,7 @@ def main() -> int:
     logger.info("Weekly evidence saved: %s", evidence_path)
     try:
         comparison = compare_evidence(archive, settings.data_dir)
-        _, comparison_path = save_comparison(comparison, settings.data_dir / "comparisons", archive.name)
+        comparison_archive, comparison_path = save_comparison(comparison, settings.data_dir / "comparisons", archive.name)
     except (OSError, ValueError) as exc:
         logger.error("Evidence saved, but comparison failed: %s", exc)
         return 1
@@ -72,7 +74,25 @@ def main() -> int:
     logger.info("Comparison saved: %s", comparison_path)
     logger.info("Changes flagged for review: %d; national labour direction: %s",
                 sum(item.review_worthy is True for item in comparison.items), comparison.labour_direction)
-    logger.info("Evidence comparison complete. Scoring and reports are not yet connected.")
+    try:
+        score = score_evidence(archive, settings.data_dir / "scores")
+        score_archive, score_path = save_score(score, settings.data_dir / "scores", archive.name)
+    except (OSError, ValueError) as exc:
+        logger.error("Evidence and comparison saved, but scoring failed: %s", exc)
+        return 1
+    logger.info("Scoring saved: %s", score_path)
+    if score.overall_score is None:
+        logger.info("Index unavailable: insufficient evidence for all six components (%d%% of component weight covered, not a confidence estimate).",
+                    score.covered_weight_percent)
+    else:
+        logger.info("Provisional Job Search Index: %.1f / 10", score.overall_score)
+    try:
+        report = build_report(archive, comparison_archive, score_archive, settings)
+        _, report_path = save_report(report, settings.reports_dir)
+    except (OSError, ValueError) as exc:
+        logger.error("Evidence, comparison and scoring saved, but report failed: %s", exc)
+        return 1
+    logger.info("Weekly Markdown report saved: %s", report_path)
     return 0
 
 

@@ -20,6 +20,8 @@ class Settings:
     research_timeout_seconds: float = 20.0
     llm_api_key: str = field(default="", repr=False)
     llm_model: str = ""
+    llm_provider: str = "none"
+    llm_timeout_seconds: float = 45.0
     search_api_key: str = field(default="", repr=False)
 
 
@@ -39,6 +41,16 @@ def load_settings() -> Settings:
     if not math.isfinite(timeout) or not 0 < timeout <= 120:
         raise ValueError("RESEARCH_TIMEOUT_SECONDS must be greater than 0 and at most 120")
 
+    provider = os.getenv("LLM_PROVIDER", "none").strip().lower()
+    if provider not in {"none", "openai"}:
+        raise ValueError("LLM_PROVIDER must be none or openai")
+    try:
+        llm_timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+    except ValueError as exc:
+        raise ValueError("LLM_TIMEOUT_SECONDS must be a number") from exc
+    if not math.isfinite(llm_timeout) or not 0 < llm_timeout <= 120:
+        raise ValueError("LLM_TIMEOUT_SECONDS must be greater than 0 and at most 120")
+
     return Settings(
         data_dir=PROJECT_ROOT / "data" / "weekly",
         reports_dir=PROJECT_ROOT / "reports",
@@ -46,6 +58,8 @@ def load_settings() -> Settings:
         research_dir=PROJECT_ROOT / "data" / "research",
         research_timeout_seconds=timeout,
         llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
-        llm_model=os.getenv("LLM_MODEL", "").strip(),
+        llm_model=os.getenv("LLM_MODEL", "").strip() or "gpt-4.1-mini-2025-04-14",
+        llm_provider=provider,
+        llm_timeout_seconds=llm_timeout,
         search_api_key=os.getenv("SEARCH_API_KEY", "").strip(),
     )

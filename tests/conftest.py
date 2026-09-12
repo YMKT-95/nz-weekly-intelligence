@@ -115,3 +115,26 @@ def make_mbie_document(make_mbie_html):
         return research.parse_document(source, source.url, content or make_mbie_html(),
                                        datetime(2026, 9, 10, 12, tzinfo=ZoneInfo("Pacific/Auckland")))
     return make
+
+
+@pytest.fixture
+def report_inputs(tmp_path, make_stats_document, make_seek_document):
+    """Saved synthetic pipeline outputs, including exact source extraction."""
+    from datetime import date
+    from src.models import ResearchBatch
+    from src.research import save_research
+    from src.extraction import extract_evidence, save_evidence
+    from src.analysis import compare_evidence, save_comparison
+    from src.scoring import score_evidence, save_score
+
+    docs = [make_stats_document(), make_stats_document('stats_cpi'), make_seek_document()]
+    batch = ResearchBatch(report_week='2026-W37', week_start=date(2026, 9, 7), week_end=date(2026, 9, 13),
+                          started_at=docs[0].retrieved_at, completed_at=docs[0].retrieved_at, documents=docs)
+    snapshot = save_research(batch, tmp_path / 'research')
+    weekly = extract_evidence(snapshot, project_root=tmp_path)
+    archive, _ = save_evidence(weekly, tmp_path / 'weekly')
+    comparison = compare_evidence(archive, tmp_path / 'weekly')
+    comparison_path, _ = save_comparison(comparison, tmp_path / 'comparisons', archive.name)
+    score = score_evidence(archive, tmp_path / 'scores')
+    score_path, _ = save_score(score, tmp_path / 'scores', archive.name)
+    return archive, comparison_path, score_path
